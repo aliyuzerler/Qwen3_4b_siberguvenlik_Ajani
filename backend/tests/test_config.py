@@ -98,3 +98,65 @@ def test_get_settings_clear_error_on_missing_config(
         assert ".env" in message
     finally:
         get_settings.cache_clear()
+
+
+# --- Faz 04: Ollama iç ağ host kısıtı (phases/04: "Model API'si yalnızca iç
+# ağ/localhost üzerinden erişilebilir olsun") ---------------------------------
+
+
+class TestOllamaHostRestriction:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+            "http://10.1.2.3:11434",       # RFC1918 özel
+            "http://192.168.1.50:11434",   # RFC1918 özel
+            "http://172.16.5.5:11434",     # RFC1918 özel
+            "http://ollama:11434",          # docker servis adı (tek etiket)
+            "http://host.docker.internal:11434",
+            "http://ollama.internal:11434",
+            "http://infer.local:11434",
+            "http://[::1]:11434",           # IPv6 loopback
+        ],
+    )
+    def test_internal_hosts_accepted(self, url: str) -> None:
+        settings = Settings(**_base(ollama_base_url=url))
+        assert settings.ollama_base_url == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://api.example.com:11434",   # genel FQDN
+            "http://8.8.8.8:11434",           # genel IP
+            "http://172.32.0.1:11434",        # 172.32 RFC1918 DIŞI (genel aralık)
+            "https://qwen.somedomain.org",
+        ],
+    )
+    def test_public_hosts_rejected_by_default(self, url: str) -> None:
+        with pytest.raises(ValidationError) as exc:
+            Settings(**_base(ollama_base_url=url))
+        assert "iç ağ" in str(exc.value)
+
+    def test_public_host_requires_explicit_escape_hatch(self) -> None:
+        """Bilinçli istisna mümkündür ama varsayılan KAPALIDIR."""
+        settings = Settings(
+            **_base(ollama_base_url="http://api.example.com:11434",
+                    ollama_allow_public_host=True)
+        )
+        assert settings.ollama_allow_public_host is True
+
+    def test_non_http_scheme_rejected(self) -> None:
+        with pytest.raises(ValidationError) as exc:
+            Settings(**_base(ollama_base_url="ftp://localhost:11434"))
+        assert "http" in str(exc.value)
+
+    def test_analysis_defaults_are_safe(self) -> None:
+        """Faz 04 güvenli varsayıllar: kill switch açık ama döngü kapalı."""
+        settings = Settings(**_base())
+        assert settings.analysis_enabled is True
+        assert settings.worker_loop_enabled is False  # arka plan döngüsü KAPALI
+        assert settings.ollama_model_tag == "qwen3:4b"
+        assert settings.ollama_model_quantization == "Q4_K_M"
+        assert settings.ollama_allow_public_host is False
+        assert settings.worker_timeout_seconds == 120.0

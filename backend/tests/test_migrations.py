@@ -59,6 +59,21 @@ async def _table_columns(db_url: str, table: str) -> list[str]:
         await engine.dispose()
 
 
+async def _table_sql(db_url: str, table: str) -> str:
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:t"),
+                    {"t": table},
+                )
+            ).first()
+            return str(row[0]) if row else ""
+    finally:
+        await engine.dispose()
+
+
 @pytest.fixture
 def migration_db(tmp_path: Path) -> str:
     return f"sqlite+aiosqlite:///{tmp_path}/migration.db"
@@ -113,3 +128,51 @@ class TestMigrations:
         assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
         heads = _run_alembic(migration_db, "heads")
         assert len(heads.stdout.strip().splitlines()) == 1
+
+    # --- Faz 04: analyses tablosu migration'ı -------------------------------
+
+    async def test_upgrade_head_creates_analyses_table(self, migration_db: str) -> None:
+        """0002_analyses: tablo var, zorunlu sütunlar ve CHECK kısıtları yerinde."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "analyses" in tables
+        columns = await _table_columns(migration_db, "analyses")
+        for required in (
+            "id",
+            "event_id",
+            "schema_version",
+            "status",
+            "ai_assessment",
+            "confidence",
+            "summary",
+            "evidence",
+            "alternative_explanations",
+            "recommended_next_steps",
+            "requires_human_review",
+            "error_code",
+            "error_message",
+            "model_tag",
+            "model_quantization",
+            "prompt_template_version",
+            "prompt_chars",
+            "context_chars",
+            "context_truncated",
+            "duration_ms",
+            "retries_used",
+            "finished_at",
+            "created_at",
+        ):
+            assert required in columns, f"analyses sütunu eksik: {required}"
+        ddl = await _table_sql(migration_db, "analyses")
+        assert "FOREIGN KEY" in ddl.upper()  # events FK (CASCADE)
+        assert "ck_analyses_status" in ddl
+        assert "ck_analyses_confidence" in ddl
+        assert "ck_analyses_completed_has_assessment" in ddl
+
+    async def test_downgrade_drops_analyses_before_events(self, migration_db: str) -> None:
+        """Geri dönüş yolu: tek adım downgrade analyses'i düşürür; events kalır."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        assert _run_alembic(migration_db, "downgrade", "-1").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "analyses" not in tables
+        assert "events" in tables  # önceki faz tablosu etkilenmez

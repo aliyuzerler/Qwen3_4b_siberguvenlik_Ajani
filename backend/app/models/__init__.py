@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.models.analysis import Analysis
 from app.models.event import Event
 
-__all__ = ["Event"]
+__all__ = ["Analysis", "Event"]

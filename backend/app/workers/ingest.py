@@ -18,6 +18,7 @@ Kurallar:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from app.services.normalization.errors import NormalizationError
 from app.services.normalization.models import NormalizedEvent
@@ -42,6 +43,9 @@ class IngestCycleResult:
     stored: int = 0
     duplicate: int = 0
     variant: int = 0
+    # Faz 04 worker cursor'ı: gördüğün en büyük kaynak zamanı (None = boş tur).
+    # Yalnızca normalize edilen event'lerden hesaplanır; hatalı alert sayılmaz.
+    latest_event_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -55,7 +59,11 @@ def _normalize_page(
     events: list[NormalizedEvent] = []
     for alert in page.items:
         try:
-            events.append(normalize_alert(alert, policy))
+            event = normalize_alert(alert, policy)
+            events.append(event)
+            # Cursor takibi: en büyük kaynak zamanı (UTC normalize garanti).
+            if result.latest_event_at is None or event.timestamp > result.latest_event_at:
+                result.latest_event_at = event.timestamp
         except NormalizationError as exc:
             result.failed += 1
             result.errors.append(f"normalizasyon: alert bozuk ({exc.message})")

@@ -8,11 +8,16 @@ Kurallar (AGENTS.md §3, §4):
 
 from __future__ import annotations
 
+import ipaddress
 from functools import lru_cache
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Tek kaynak: analiz şema sözleşmesi services.analysis.models içinde tanımlıdır;
+# config'e ekstra summary limiti kopyası ALINMADI (num_predict + şema sabiti yeterli).
 
 if TYPE_CHECKING:
     from app.services.normalization.redaction import RedactionPolicy
@@ -80,10 +85,32 @@ class Settings(BaseSettings):
     retention_days: int = Field(default=30, ge=1, le=365)
 
     # --- Ollama / Model (Faz 04) ---
+    # Kullanıcı makinesindeki yerel Ollama; model tag sabittir (Faz 00 kararı:
+    # qwen3:4b, CPU modu, Q4_K_M quantization önerisi).
     ollama_base_url: str = "http://localhost:11434"
     ollama_model_tag: str = "qwen3:4b"
+    ollama_model_quantization: str = "Q4_K_M"
+    ollama_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    ollama_num_predict: int = Field(default=512, ge=32, le=4096)
+    # "Model API'si yalnızca iç ağ/localhost üzerinden erişilebilir olsun":
+    # false iken yalnızca loopback/özel IP/tek-etiket hostname/host.docker.internal
+    # kabul edilir; gerçek genel FQDN/IP için bilinçli açma gerekir (test/dev).
+    ollama_allow_public_host: bool = False
+
+    # --- Analiz worker'ı (Faz 04) ---
+    # Kill switch: false iken analiz devre dışı (/ready "disabled" raporlar).
+    analysis_enabled: bool = True
+    analysis_batch_size: int = Field(default=10, ge=1, le=100)
+    analysis_max_retries: int = Field(default=1, ge=0, le=5)
+    analysis_backoff_base_seconds: float = Field(default=1.0, gt=0, le=30)
+    analysis_max_context_chars: int = Field(default=4000, ge=256, le=32_000)
+    analysis_max_output_chars: int = Field(default=6000, ge=1000, le=64_000)
     worker_concurrency: int = Field(default=2, ge=1, le=16)
     worker_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
+    # Birleşik arka plan döngüsü (fetch → store → analyze): VARSAYILAN KAPALI.
+    worker_loop_enabled: bool = False
+    worker_interval_seconds: float = Field(default=30.0, ge=5.0, le=3600.0)
+    worker_initial_window_seconds: float = Field(default=900.0, ge=10.0, le=86_400.0)
 
     # --- Politika (Faz 07) ---
     policy_mode: Literal["observe_only", "dry_run"] = "observe_only"
@@ -128,6 +155,53 @@ class Settings(BaseSettings):
                 "alert kaynağı gerçek Wazuh Indexer olmalıdır."
             )
         return self
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def _validate_ollama_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError(
+                "OLLAMA_BASE_URL 'http://' veya 'https://' ile başlamalıdır "
+                "(örnek: http://localhost:11434)."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_ollama_host(self) -> Settings:
+        """Model API yalnızca iç ağdan erişilir (phases/04).
+
+        İzinli: loopback (localhost/127.x/::1), özel IP (RFC1918/uydu aralıkları),
+        tek-etiket hostname (docker servis adı, örn. 'ollama'), host.docker.internal,
+        *.internal / *.local. Genel FQDN/IP ancak ollama_allow_public_host=true
+        ile açılır (bilinçli istisna; mesajda gerekçe).
+        """
+        if self.ollama_allow_public_host:
+            return self
+        host = urlparse(self.ollama_base_url).hostname
+        if host is None:
+            raise ValueError(
+                "OLLAMA_BASE_URL içinde geçerli bir host bulunamadı."
+            )
+        lowered = host.lower()
+        if lowered in {"localhost", "host.docker.internal"}:
+            return self
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        if ip is not None:
+            if ip.is_loopback or ip.is_private:
+                return self
+        else:
+            # Tek-etiket (docker servis adı) veya iç ağ etiketli FQDN
+            if "." not in lowered or lowered.endswith((".internal", ".local")):
+                return self
+        raise ValueError(
+            f"OLLAMA_BASE_URL genel/şüpheli bir host'a işaret ediyor ('{host}'). "
+            "Model API yalnızca iç ağ/localhost üzerinden erişilebilir. Gerçekten "
+            "genel bir uç nokta gerekiyorsa OLLAMA_ALLOW_PUBLIC_HOST=true yapın "
+            "(olay verisi dışarı çıkabilir; üretimde önerilmez)."
+        )
 
     @property
     def redaction_policy(self) -> RedactionPolicy:

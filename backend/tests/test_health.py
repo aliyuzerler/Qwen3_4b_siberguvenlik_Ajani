@@ -1,4 +1,4 @@
-"""Health/ready endpoint testleri (Faz 01 kabul + Faz 02 Wazuh bileşeni)."""
+"""Health/ready endpoint testleri (Faz 01 kabul + Faz 02 Wazuh + Faz 04 Ollama)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.db import dispose_engine
 from app.main import create_app
+from app.services.analysis.errors import OllamaUnavailableError
 from app.services.wazuh.errors import WazuhAuthError
 from app.services.wazuh.mock_source import MockWazuhAlertSource
-from tests.conftest import make_settings
+from tests.conftest import MockOllamaClient, make_settings
 
 
 async def test_liveness_returns_ok(client: AsyncClient) -> None:
@@ -23,9 +24,10 @@ async def test_readiness_with_db_up(client: AsyncClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["components"]["database"] == "up"
-    # Faz 02/04'e kadar bu bileşenler yapılandırılmamıştır.
+    # Faz 02: Wazuh yapılandırılmamış; Faz 04: Ollama istemcisi her zaman
+    # kurulur ama test URL'i deterministik olarak erişilemez → down.
     assert body["components"]["wazuh"] == "not_configured"
-    assert body["components"]["ollama"] == "not_configured"
+    assert body["components"]["ollama"] == "down"
 
 
 async def test_readiness_returns_503_when_db_down(tmp_path: object) -> None:
@@ -102,4 +104,58 @@ async def test_ready_wazuh_not_configured_without_source(tmp_path: object) -> No
     async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
         response = await http_client.get("/api/v1/ready")
     assert response.json()["components"]["wazuh"] == "not_configured"
+    await dispose_engine()
+
+
+# --- Faz 04: Ollama bileşeni ----------------------------------------------
+
+
+async def test_ready_ollama_up_with_mock_client(tmp_path: object) -> None:
+    application = create_app(make_settings(tmp_path))
+    application.state.ollama_client = MockOllamaClient(models=("qwen3:4b",))
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
+        response = await http_client.get("/api/v1/ready")
+    assert response.status_code == 200
+    assert response.json()["components"]["ollama"] == "up"
+    await dispose_engine()
+
+
+async def test_ready_ollama_model_missing(tmp_path: object) -> None:
+    """Model kurulu değilse /ready anlaşılır 'model_missing' raporlamalı."""
+    application = create_app(
+        make_settings(tmp_path, ollama_model_tag="qwen3:4b")
+    )
+    application.state.ollama_client = MockOllamaClient(models=("farkli-model:latest",))
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
+        response = await http_client.get("/api/v1/ready")
+    assert response.status_code == 200
+    assert response.json()["components"]["ollama"] == "model_missing"
+    await dispose_engine()
+
+
+async def test_ready_ollama_down_when_unavailable(tmp_path: object) -> None:
+    application = create_app(make_settings(tmp_path))
+    application.state.ollama_client = MockOllamaClient(
+        health_error=OllamaUnavailableError("Ollama'ya ulaşılamadı (sentetik)")
+    )
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
+        response = await http_client.get("/api/v1/ready")
+    assert response.status_code == 200  # ollama down, genel ready hâlâ 200
+    assert response.json()["components"]["ollama"] == "down"
+    await dispose_engine()
+
+
+async def test_ready_ollama_disabled_by_kill_switch(tmp_path: object) -> None:
+    """ANALYSIS_ENABLED=false → bileşen 'disabled'; istemciye hiç bakılmaz."""
+    application = create_app(make_settings(tmp_path, analysis_enabled=False))
+    application.state.ollama_client = MockOllamaClient(
+        health_error=OllamaUnavailableError("çağrılmamalı")
+    )
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
+        response = await http_client.get("/api/v1/ready")
+    assert response.json()["components"]["ollama"] == "disabled"
     await dispose_engine()
