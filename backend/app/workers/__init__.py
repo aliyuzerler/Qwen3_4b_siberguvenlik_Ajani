@@ -1,7 +1,8 @@
-"""Arka plan iş katmanı yer tutucusu.
+"""Arka plan iş katmanı.
 
-Planlanan modüller:
-- Faz 04: queue.py (DB tabanlı idempotent görev tablosu), analysis_worker.py
-  (Ollama/Qwen3 4B çağrısı, timeout, concurrency sınırı)
-Bu fazda worker bulunmaz (Faz 01 kuralı).
+Modüller:
+- Faz 03: ingest.py — fetch → normalize → idempotent saklama döngüsü
+  (zamanlanmış döngü Faz 04'te etkinleşir)
+- Faz 04 (planlı): queue.py (DB tabanlı idempotent görev tablosu),
+  analysis_worker.py (Ollama/Qwen3 4B çağrısı, timeout, concurrency sınırı)
 """

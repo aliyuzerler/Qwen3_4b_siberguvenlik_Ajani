@@ -15,11 +15,12 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# ORM modellerini Base'e kaydeder (metadata doldurulur).
+import app.models  # noqa: F401
 from alembic import context
 from app.core.config import get_settings
 from app.core.db import Base
 
-# Faz 03'te: from app import models  # noqa: F401  (modelleri Base'e kaydeder)
 target_metadata = Base.metadata
 
 config = context.config
