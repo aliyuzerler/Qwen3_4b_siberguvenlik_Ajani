@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "alert_ids": [
+    "synthetic-alert-001"
+  ],
+  "summary": "Birden fazla başarısız oturum açma olayı gözlenmiştir.",
+  "assessment": "suspicious",
+  "confidence": 0.68,
+  "evidence": [
+    {
+      "field": "rule.id",
+      "value": "synthetic-rule",
+      "meaning": "İlgili kural bu olay sınıfını işaret ediyor; tek başına başarılı ihlali kanıtlamaz."
+    }
+  ],
+  "alternative_explanations": [
+    "Kullanıcı yanlış parola girmiş olabilir.",
+    "Yetkili bir test yapılmış olabilir."
+  ],
+  "recommended_next_steps": [
+    {
+      "type": "collect_more_evidence",
+      "reason": "Aynı kaynak için başarılı giriş olup olmadığını incele."
+    }
+  ],
+  "requires_human_review": true
+}

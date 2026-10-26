@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# --- Env / secret'lar (AGENTS.md §3: .env asla repoya girmez) ---
+.env
+.env.*
+!.env.example
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Veritabanı / çalışma dosyaları ---
+*.sqlite3
+*.db
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store

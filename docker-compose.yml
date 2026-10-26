@@ -1,0 +1,54 @@
+# ajant — yerel/staging Docker Compose taslağı (Faz 01)
+#
+# NOTLAR:
+# - Sandbox'ta Docker bulunmadığından bu dosyanın doğrulaması kullanıcı
+#   makinesinde yapılır (bkz. docs/phase-00-discovery.md, risk R4).
+# - Ollama kullanıcı makinesinde çalıştığı için compose içinde KOŞMAZ;
+#   backend host.docker.internal üzerinden erişir (Linux'ta extra_hosts gerekir).
+# - Parolalar SAHTE yerel geliştirme değeridir; staging/üretimde secret
+#   yönetimi Faz 08'de tamamlanacaktır (AGENTS.md §3).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ajant
+      POSTGRES_USER: ajant
+      POSTGRES_PASSWORD: SAHTE_YEREL_PAROLA_DEGISTIR
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ajant -d ajant"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # Faz 08'e kadar DB portu host'a AÇILMAZ (yalnızca backend erişir).
+    expose:
+      - "5432"
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ajant:SAHTE_YEREL_PAROLA_DEGISTIR@db:5432/ajant
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
