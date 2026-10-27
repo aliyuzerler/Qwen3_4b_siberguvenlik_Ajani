@@ -171,6 +171,9 @@ curl -s http://127.0.0.1:8000/api/v1/ready | grep components
 ```
 
 - Yedekleme sıklığı önerisi: günlük (cron) + kritik değişiklik öncesi.
+- Faz 10 sertleştirmesi: başarısız koşumda yarım dump dosyası otomatik SİLİNİR
+  (EXIT trap) — operatör "bozuk yedek var" sanıp restore denemesi yapamaz;
+  geçerli yedek (TAMAM sonrası) trap kaldırıldığı için prune hatasında korunur.
 - Restore testi staging'de AYLIK yinelenir (phases/08 test promptu: her test
   için komut/beklenen/gelen raporu — `docs/phase-08-verification.md`).
 

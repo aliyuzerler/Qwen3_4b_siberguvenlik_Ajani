@@ -36,6 +36,11 @@ mkdir -p "$BACKUPS_DIR"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 TARGET="$BACKUPS_DIR/ajant-$STAMP.dump"
 
+# Faz 10: başarısız koşumda yarım dump DOSYASI KALMAZ (operatörün "bozuk yedek
+# var sanıp restore denemesi" riskini kapatır). Başarıda trap kaldırılır —
+# prune adımındaki bir hata geçerli yedeği SİLMEZ.
+trap 'rm -f "$TARGET"' EXIT
+
 echo "[backup_db] pg_dump (custom format) → $TARGET"
 docker compose exec -T db pg_dump -U ajant -Fc ajant > "$TARGET"
 
@@ -54,6 +59,7 @@ if ! docker compose exec -T db pg_restore -U ajant -l /dev/stdin < "$TARGET" >/d
 fi
 
 echo "[backup_db] TAMAM: $TARGET ($SIZE bayt, archive doğrulandı)"
+trap - EXIT
 
 if [ -n "$PRUNE_DAYS" ]; then
   echo "[backup_db] eski yedekler temizleniyor (>${PRUNE_DAYS} gün)"
