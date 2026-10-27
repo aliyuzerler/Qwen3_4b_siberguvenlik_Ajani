@@ -216,14 +216,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # uygulama; sistemde değişiklik yapmaz (phases/07: "fake executor").
     application.state.remediation_executor = DryRunExecutor()
 
-    application.add_middleware(RequestIdMiddleware)
-    # Faz 08: savunmacı yanıt başlıkları + istek gövdesi tavanı (DoS freni).
-    application.add_middleware(
-        SecurityHeadersMiddleware, hsts_enabled=app_settings.hsts_enabled
-    )
+    # Ara katman ekleme sırası BİLGİNÇLİDİR (Starlette add_middleware
+    # insert(0): son eklenen EN DIŞTA). Dıştan içe hedef sıra:
+    #   RequestId → SecurityHeaders → BodySizeLimit
+    # Böylece BodySizeLimit'in ürettiği 413/400 yanıtları da güvenlik
+    # başlıkları ve X-Request-ID'den geçer (bağımsız doğrulayıcı F1 bulgusu).
     application.add_middleware(
         BodySizeLimitMiddleware, max_bytes=app_settings.max_request_body_bytes
     )
+    application.add_middleware(
+        SecurityHeadersMiddleware, hsts_enabled=app_settings.hsts_enabled
+    )
+    application.add_middleware(RequestIdMiddleware)
 
     if app_settings.cors_origin_list:
         application.add_middleware(

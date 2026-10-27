@@ -64,9 +64,11 @@ geliştirici koşumunu raporlar; bağımsız doğrulayıcı koşumu (worklog
 vulnerabilities" (prod + dev ağacı).
 
 **Toplam koşum (geliştirici):**
-- Backend: `pytest tests/ -q` → **592 passed, 0 failed** (Faz 07: 534 → +58:
-  db_rate_limit 10, users_api 21, security_headers 15, health-disk 4,
-  migrations-0006 3, diğer dahili)
+- Backend: `pytest tests/ -q` → **595 passed, 0 failed** (Faz 07: 534 → +61:
+  db_rate_limit 10, users_api 23, security_headers 16 [başlık/HSTS/gövde/
+  prod-matris/413-başlık-regresyonu], health-disk 4, migrations-0006 3,
+  prod validator testleri dahil) — uyarı: aralıklı 1 non-deterministik
+  resource uyarısı gözlemlendi (koşumlardan bazılarında; sonuç etkilenmez)
 - `ruff check app tests` → All checks passed; `mypy app` → 77 dosya temiz
 - Frontend: `npx vitest run` → **31 passed (7 dosya)** (+8: users 4, hesabim 4);
   `npm run build` → başarılı (**14 route**, +2: /users, /hesabim)
@@ -75,6 +77,32 @@ vulnerabilities" (prod + dev ağacı).
   matrisi: /docs 404 + 3 geçersiz prod config çöküşü)
 - Alembic: 0001↔0006 roundtrip + 0006 özel upgrade/downgrade/roundtrip testleri
 - Log credential taraması: uvicorn smoke logunda SAHTE parola/JWT izi 0
+
+### Bağımsız doğrulayıcı koşumu (Task ID: 8-test)
+
+Geliştirici koşumu birebir teyit edildi: pytest 592/592 (fix öncesi), ruff+
+mypy temiz, vitest 31/31, build 14 route, smoke 39/39, secret_scan TEMİZ,
+pip-audit + npm audit 0 zafiyet, bağımsız alembic 0006↔0005 roundtrip temiz,
+smoke logunda credential izi 0. **18 kritik node-id TEK TEK** koşuldu (hepsi
+PASS). Bağımsız probe'lar: P1 `is_active` enjeksiyonu → 422 extra_forbidden
+(ENGELLENDİ); P2 username normalize→pattern sırası kanıtlandı
+(`"  Admin2 "` → 201 `admin2`; case-bypass yok); P4 12 eşzamanlı DB-fren
+isteğinde tam 5 izin / 12 hit — **UPSERT+RETURNING atomikliği canlı kanıt**.
+
+### Bulgu kapatma (bağımsız doğrulayıcı 8-test sonrası)
+
+| Bulgu | Kapatma |
+|---|---|
+| **F1 orta** — 413/400 yanıtları güvenlik başlıkları + X-Request-ID almıyor (BodySizeLimit middleware'i SecurityHeaders'ın DIŞINDA kalıyor; `add_middleware` insert(0) semantiği) | **Kapatıldı**: main.py ekleme sırası ters çevrildi (dıştan içe: RequestId → SecurityHeaders → BodySizeLimit) + regresyon testi `TestBodySizeLimitResponseHeaders::test_413_response_carries_security_headers_and_request_id` (PASS); smoke 39/39 yeniden koşuldu |
+| **F2 düşük** — parola değişiminde new == current engellenmiyor ("rotasyon yapıldı" yanılsaması) | **Kapatıldı**: change_my_password + reset_user_password'de aynı-parola reddi (422 `same_password`); 2 regresyon testi PASS |
+| **F3 bilgi** — eşzamanlı çift create UNIQUE yarışı → 500 | **Kapatıldı**: IntegrityError → rollback + idempotent 409 `username_taken` (Faz 07 F3 kalıbı) |
+| **F6 bilgi** — backup script kısmi-dump koruması yalnızca boyut eşikli | **Kapatıldı**: backup sonrası `pg_restore -l` archive doğrulaması eklendi (kesik/karışmış dump reddedilir) |
+| **F4 bilgi** — audit commit'ten sonra yazılıyor (auditsiz değişiklik penceresi) | Belgelendi: Faz 06 F9 / Faz 07 F8 ile aynı bilinçli kalıp (audit arızası akışı bozmaz; kalıcı iz satır durumunda) |
+| **F5 bilgi** — DatabaseRateLimiter dialect cache / cleanup counter instance-bazlı | Belgelendi: pratikte tek engine; çok-prosesli temizlik işlevsel (her proses kendi N=100'ü) |
+| **F7 bilgi** — compose NEXT_PUBLIC_API_BASE_URL / RATE_LIMIT_BACKEND=memory yerel değerler | Belgendi: deployment.md §2.1 çok-proses + origin yönlendirmesi operatör kararına dokümante |
+
+Fix sonrası son durum: **pytest 595/595**, ruff temiz, mypy 77 dosya temiz,
+smoke **39/39**.
 
 ## 3. Mimari kararlar ve varsayımlar
 

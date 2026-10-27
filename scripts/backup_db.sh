@@ -45,7 +45,15 @@ if [ "$SIZE" -lt 200 ]; then
   echo "[backup_db] HATA: yedek dosyası beklenenden küçük ($SIZE bayt) — pg_dump çökmüş olabilir." >&2
   exit 1
 fi
-echo "[backup_db] TAMAM: $TARGET ($SIZE bayt)"
+
+# Archive bütünlüğü (Faz 08 bağımsız doğrulama F6): pg_restore -l dump
+# katalogunu okuyabilirse dosya kesik/karışmış değildir (kısmi dump koruması).
+if ! docker compose exec -T db pg_restore -U ajant -l /dev/stdin < "$TARGET" >/dev/null 2>&1; then
+  echo "[backup_db] HATA: yedek archive doğrulaması (pg_restore -l) başarısız — dosya bozuk olabilir." >&2
+  exit 1
+fi
+
+echo "[backup_db] TAMAM: $TARGET ($SIZE bayt, archive doğrulandı)"
 
 if [ -n "$PRUNE_DAYS" ]; then
   echo "[backup_db] eski yedekler temizleniyor (>${PRUNE_DAYS} gün)"

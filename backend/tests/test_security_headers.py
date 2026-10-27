@@ -165,3 +165,27 @@ class TestProdHardening:
     async def test_dev_keeps_docs_enabled(self, client: AsyncClient) -> None:
         response = await client.get("/openapi.json")
         assert response.status_code == 200
+
+
+class TestBodyLimitResponseHeaders:
+    """Bulgu kapatma (8-test F1): 413/400 yanıtları da başlıklardan geçmeli."""
+
+    async def test_413_response_carries_security_headers_and_request_id(
+        self, tmp_path: object
+    ) -> None:
+        application = create_app(make_settings(tmp_path, max_request_body_bytes=512))
+        try:
+            transport = ASGITransport(app=application)
+            async with AsyncClient(transport=transport, base_url="http://testserver") as http:
+                response = await http.post(
+                    "/api/v1/auth/login", json={"username": "x", "password": "y" * 2048}
+                )
+                assert response.status_code == 413
+                # Middleware zincirinden GEÇMİŞ olmalı (dıştan içe:
+                # RequestId → SecurityHeaders → BodySizeLimit)
+                assert response.headers["x-content-type-options"] == "nosniff"
+                assert response.headers["x-frame-options"] == "DENY"
+                assert response.headers["cache-control"] == "no-store"
+                assert len(response.headers.get("x-request-id", "")) > 0
+        finally:
+            await dispose_engine()

@@ -518,3 +518,34 @@ class TestAdminPasswordReset:
         )
         actions = await actions_via_global_sessionmaker()
         assert "user.password_reset" in actions
+
+
+class TestSamePasswordRejected:
+    """Bulgu kapatma (8-test F2): aynı parola değişimi "rotasyon" yanılsaması üretmesin."""
+
+    async def test_self_change_same_password_422(self, make_fresh_client) -> None:
+        client = await make_fresh_client()
+        headers = await login_headers_for(
+            client, username="admin", password=TEST_ADMIN_PASSWORD
+        )
+        response = await client.post(
+            "/api/v1/users/me/password",
+            headers=headers,
+            json={"current_password": TEST_ADMIN_PASSWORD, "new_password": TEST_ADMIN_PASSWORD},
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "same_password"
+
+    async def test_admin_reset_same_password_422(self, make_fresh_client) -> None:
+        client = await make_fresh_client()
+        admin_headers = await login_headers_for(
+            client, username="admin", password=TEST_ADMIN_PASSWORD
+        )
+        user = await create_user(client, admin_headers, username="same-pw-user")
+        response = await client.post(
+            f"/api/v1/users/{user['id']}/password",
+            headers=admin_headers,
+            json={"new_password": TEST_USER_PASSWORD},
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "same_password"

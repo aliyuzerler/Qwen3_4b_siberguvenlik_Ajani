@@ -40,6 +40,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import CurrentUser, SessionDep, require_role
@@ -134,7 +135,13 @@ async def create_user(
         is_active=True,
     )
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Eşzamanlı çift create yarışı: SELECT-sonra-INSERT penceresinde
+        # UNIQUE çarpar → 500 yerine idempotent 409 (Faz 07 F3 kalıbı).
+        await session.rollback()
+        return _reject("username_taken", "Bu kullanıcı adı zaten kullanımda.")
     await session.refresh(user)
 
     await audit.record(
@@ -220,6 +227,14 @@ async def change_my_password(
         return _reject("user_not_found", "Kullanıcı bulunamadı.", status=404)
     if not verify_password(db_user.password_hash, payload.current_password):
         return _reject("wrong_current_password", "Mevcut parola hatalı.", status=400)
+    if verify_password(db_user.password_hash, payload.new_password):
+        # Faz 08 bulgu kapatma (8-test F2): aynı parola "rotasyon yapıldı"
+        # yanılsamasını önler; değişiklik reddedilir.
+        return _reject(
+            "same_password",
+            "Yeni parola mevcut parola ile aynı olamaz.",
+            status=422,
+        )
     if _password_too_short(settings, payload.new_password):
         return _reject(
             "weak_password",
@@ -268,6 +283,13 @@ async def reset_user_password(
             "use_self_endpoint",
             "Kendi parolanızı bu uçtan sıfırlayamazsınız; "
             "/users/me/password uçunu kullanın.",
+        )
+    if verify_password(user.password_hash, payload.new_password):
+        # Faz 08 bulgu kapatma (8-test F2): admin reset de aynı-parola reddi.
+        return _reject(
+            "same_password",
+            "Yeni parola kullanıcının mevcut parolası ile aynı olamaz.",
+            status=422,
         )
 
     user.password_hash = hash_password(payload.new_password)
