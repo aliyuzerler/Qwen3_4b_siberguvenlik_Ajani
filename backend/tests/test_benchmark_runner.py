@@ -79,6 +79,14 @@ def test_rules_only_end_to_end_outputs(tmp_path: Path) -> None:
     assert csv_lines[0] == "metric,value"
     assert len(csv_lines) > 5
 
+    # 9-test F1: started_at_utc gerçek ISO zaman damgası olmalı (run_id değil)
+    from datetime import datetime
+
+    started_raw = provenance["started_at_utc"]
+    parsed = datetime.fromisoformat(started_raw)  # çözülmezse test KIRILIR
+    assert parsed.tzinfo is not None
+    assert started_raw != report["run_id"]
+
     # predictions.jsonl: satır başına kayıt
     prediction_text = (result.run_dir / "predictions.jsonl").read_text(encoding="utf-8")
     prediction_lines = prediction_text.splitlines()
@@ -164,6 +172,8 @@ def test_infrastructure_abort_writes_partial_report(
     assert report["run_status"] == RUN_STATUS_ABORTED
     assert report["abort_error"] == "bağlantı yok (test)"
     assert report["metrics"]["totals"]["evaluated_records"] == 0
+    # 9-test F2: abort koşumu makine-okur kanıt olarak GEÇERSİZ olmalı
+    assert report["results_valid_as_model_evidence"] is False
 
 
 def test_cli_rejects_invalid_dataset(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

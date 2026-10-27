@@ -221,6 +221,7 @@ async def run_benchmark(
         records = records[:limit]
 
     started_at = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    started_at_iso = datetime.now(UTC).isoformat()
     run_id = f"{baseline}-{dataset.version}-{started_at}-{uuid.uuid4().hex[:6]}"
     run_dir = out_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -311,6 +312,7 @@ async def run_benchmark(
         abort_error=abort_error,
         rss_start=rss_start,
         elapsed_s=time.monotonic() - monotonic_start,
+        started_at_iso=started_at_iso,
         probe=(_probe_ollama_ps() if probe_ollama_ps else None),
     )
 
@@ -372,19 +374,25 @@ def _build_report(
     abort_error: str | None,
     rss_start: int,
     elapsed_s: float,
+    started_at_iso: str,
     probe: dict[str, Any] | None,
 ) -> dict[str, Any]:
     is_llm = baseline in (BASELINE_QWEN_PROMPT_ONLY, BASELINE_RULES_CORR_QWEN)
     effective_provider = llm.provider if is_llm else "none"
     metrics = compute_metrics(records, evaluations)
     rss_end = _peak_rss_kb()
+    # 9-test F2: KISMİ/ABORT koşum hiçbir koşulda geçerli kanıt sayılmaz
+    # (makine-okur tüketicinin tek güvenilir bayrağıdır).
+    results_valid = (
+        effective_provider != "mock" and status == RUN_STATUS_COMPLETED
+    )
     report: dict[str, Any] = {
         "run_id": run_id,
         "run_status": status,
         "abort_error": abort_error,
         "baseline": baseline,
         "baseline_version": BASELINE_VERSIONS[baseline],
-        "results_valid_as_model_evidence": effective_provider != "mock",
+        "results_valid_as_model_evidence": results_valid,
         "results_interpretation": _interpretation(effective_provider),
         "provenance": {
             "seed": seed,
@@ -408,7 +416,7 @@ def _build_report(
             "dataset_path": str(dataset.path),
             "records_requested": len(records),
             "records_evaluated": len(evaluations),
-            "started_at_utc": run_id,
+            "started_at_utc": started_at_iso,
             "finished_at_utc": datetime.now(UTC).isoformat(),
             "git_commit": _git_commit(),
             "python_version": sys.version.split()[0],
