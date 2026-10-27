@@ -241,3 +241,84 @@ class TestMigrations:
         columns = await _table_columns(migration_db, "users")
         assert "password" not in columns, "düz metin parola sütunu olmamalı"
         assert "password_hash" in columns
+
+    # --- Faz 06: korelasyon tabloları migration'ı ----------------------------
+
+    async def test_upgrade_head_creates_correlation_tables(
+        self, migration_db: str
+    ) -> None:
+        """0004_correlations: üç tablo, sütunlar, CHECK + UNIQUE + FK kısıtları."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "correlation_rules" in tables
+        assert "correlations" in tables
+        assert "correlation_events" in tables
+
+        rule_columns = await _table_columns(migration_db, "correlation_rules")
+        for required in (
+            "key",
+            "name",
+            "description",
+            "version",
+            "kind",
+            "params",
+            "enabled",
+            "created_at",
+            "updated_at",
+        ):
+            assert required in rule_columns, f"correlation_rules sütunu eksik: {required}"
+        rule_ddl = await _table_sql(migration_db, "correlation_rules")
+        assert "ck_correlation_rules_version" in rule_ddl
+        assert "ck_correlation_rules_kind" in rule_ddl
+
+        corr_columns = await _table_columns(migration_db, "correlations")
+        for required in (
+            "id",
+            "rule_key",
+            "rule_version",
+            "dedup_key",
+            "window_start",
+            "window_end",
+            "event_count",
+            "max_rule_level",
+            "evidence",
+            "hit_count",
+            "first_hit_at",
+            "last_hit_at",
+            "created_at",
+        ):
+            assert required in corr_columns, f"correlations sütunu eksik: {required}"
+        corr_ddl = await _table_sql(migration_db, "correlations")
+        assert "UNIQUE" in corr_ddl.upper()  # dedup_key UNIQUE (tekrar yönetimi)
+        assert "ck_correlations_event_count" in corr_ddl
+        assert "ck_correlations_hit_count" in corr_ddl
+        assert "ck_correlations_max_rule_level" in corr_ddl
+        assert "FOREIGN KEY" in corr_ddl.upper()  # rule_key FK
+
+        link_ddl = await _table_sql(migration_db, "correlation_events")
+        assert link_ddl.upper().count("FOREIGN KEY") == 2  # her iki FK CASCADE
+        assert "ON DELETE CASCADE" in link_ddl.upper()
+
+    async def test_downgrade_correlations_drops_all_three_tables(
+        self, migration_db: str
+    ) -> None:
+        """Geri dönüş yolu: head → 0003 korelasyon tabloları düşer; auth kalır."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        down = _run_alembic(migration_db, "downgrade", "0003_auth")
+        assert down.returncode == 0, down.stderr
+        tables = await _table_names(migration_db)
+        assert "correlations" not in tables
+        assert "correlation_events" not in tables
+        assert "correlation_rules" not in tables
+        assert "users" in tables and "audit_log" in tables  # önceki faz etkilenmez
+
+    async def test_correlation_roundtrip_reupgrade(
+        self, migration_db: str
+    ) -> None:
+        """0004 → 0003 → 0004 turu veri şemasını bozmaz."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        assert _run_alembic(migration_db, "downgrade", "0003_auth").returncode == 0
+        again = _run_alembic(migration_db, "upgrade", "head")
+        assert again.returncode == 0, again.stderr
+        tables = await _table_names(migration_db)
+        assert {"correlation_rules", "correlations", "correlation_events"} <= set(tables)

@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/", label: "Genel Bakış" },
   { href: "/events", label: "Olaylar" },
+  { href: "/correlations", label: "Korelasyon" },
+  { href: "/rules", label: "Kurallar" },
   { href: "/agents", label: "Sunucular" },
   { href: "/audit", label: "Audit Log", adminOnly: true },
   { href: "/settings", label: "Ayarlar", adminOnly: true },

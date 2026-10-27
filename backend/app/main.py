@@ -79,6 +79,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 detail={"mechanism": "startup_bootstrap"},
             )
 
+    # Faz 06: korelasyon kural kataloğunu DB'ye senkronla (upsert; sürüm
+    # artışı audit'lenir; operatörün enabled kararı KORUNUR). Her başlangıçta
+    # idempotent çalışır; kill switch'ten bağımsızdır (panel kuralları gösterir).
+    from app.services.correlation import build_default_catalog
+    from app.services.correlation.repository import CorrelationRepository
+
+    await CorrelationRepository(get_sessionmaker()).sync_rule_catalog(
+        build_default_catalog()
+    )
+
     if settings.worker_loop_enabled:
         stop_event = asyncio.Event()
         analyzer = build_analyzer(settings, app.state.ollama_client, app.state.analysis_metrics)
@@ -98,6 +108,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 store_raw=settings.store_raw_alert,
                 initial_window_seconds=settings.worker_initial_window_seconds,
                 stats=stats,
+                correlation_enabled=settings.correlation_enabled,
+                correlation_lookback_seconds=settings.correlation_lookback_seconds,
+                correlation_max_events=settings.correlation_max_events_per_run,
+                analysis_enabled=settings.analysis_enabled,
             ),
             name="ajant-security-worker",
         )
@@ -166,7 +180,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Kimlik Bearer başlığıyla taşınır (cookie oturumu YOK) →
             # credentials gerekmez; CSRF yüzeyi kapanır (Faz 05 karar).
             allow_credentials=False,
-            allow_methods=["GET", "POST"],
+            # PATCH (Faz 06): admin korelasyon kuralı toggle'u tarayıcıdan gelir.
+            allow_methods=["GET", "POST", "PATCH"],
             allow_headers=["*"],
         )
 
@@ -188,5 +203,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         model_tag=app_settings.ollama_model_tag,
         analysis_enabled=app_settings.analysis_enabled,
         worker_loop_enabled=app_settings.worker_loop_enabled,
+        correlation_enabled=app_settings.correlation_enabled,
     )
     return application

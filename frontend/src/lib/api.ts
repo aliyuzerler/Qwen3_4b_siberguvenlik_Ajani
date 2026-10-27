@@ -125,4 +125,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+  // Faz 06: korelasyon kuralı toggle (admin; backend audit'e yazar)
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 };

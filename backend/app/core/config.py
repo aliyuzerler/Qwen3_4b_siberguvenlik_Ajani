@@ -124,6 +124,17 @@ class Settings(BaseSettings):
     worker_interval_seconds: float = Field(default=30.0, ge=5.0, le=3600.0)
     worker_initial_window_seconds: float = Field(default=900.0, ge=10.0, le=86_400.0)
 
+    # --- Korelasyon (Faz 06) ---
+    # Kill switch: false iken korelasyon döngüsü hiç çalışmaz (kural tespiti
+    # yapılmaz; mevcut tespit kayıtları panel/API'de okunmaya devam eder).
+    correlation_enabled: bool = True
+    # Motor her turda bu geriye dönük pencereyi tarar (worker interval ile
+    # birlikte). Pencere, en uzun kural penceresinden büyük olmalıdır ki
+    # süren olaylar tur atlamadan yakalansın.
+    correlation_lookback_seconds: float = Field(default=21_600.0, ge=60.0, le=172_800.0)
+    # Tek turda taranacak en fazla event sayısı (bellek/tanımlanabilirlik tavanı).
+    correlation_max_events_per_run: int = Field(default=5_000, ge=100, le=100_000)
+
     # --- Politika (Faz 07) ---
     policy_mode: Literal["observe_only", "dry_run"] = "observe_only"
 

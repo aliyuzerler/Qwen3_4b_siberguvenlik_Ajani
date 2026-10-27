@@ -10,7 +10,12 @@ Davranış:
   aralıkta:
     1. Wazuh kaynağı yapılandırılmışsa ingest döngüsü (Faz 03) — kaynağı
        olmayan kurulumda adım sessizce atlanır (/ready "not_configured").
-    2. Analysis döngüsü (Faz 04) — ANALYSIS_ENABLED=false ise atlanır.
+    2. Correlation döngüsü (Faz 06) — CORRELATION_ENABLED=false ise atlanır.
+       Sıra kararı: korelasyon ANALİZDEN ÖNCE çalışır; tamamen yerel ve
+       deterministiktir, model (Ollama) kesintisinden etkilenmemelidir.
+    3. Analysis döngüsü (Faz 04) — ANALYSIS_ENABLED=false ise atlanır
+       (kill switch anlambilimi: kill switch kapalıyken Ollama'ya
+       çağrı YAPILMAZ; /ready "disabled" ile tutarlı).
 - Ingest zaman penceresi: ilk turda WORKER_INITIAL_WINDOW_SECONDS geriye;
   sonrasında son başarılı turdaki en büyük event timestamp'inden itibaren
   (cursor). Kaynak boşsa cursor korunur. Başarısız turda cursor İLERLEMEZ
@@ -42,6 +47,7 @@ from app.services.normalization.repository import EventRepository
 from app.services.wazuh.models import AlertQuery
 from app.services.wazuh.source import WazuhAlertSource
 from app.workers.analysis import run_analysis_cycle
+from app.workers.correlation import run_correlation_cycle
 from app.workers.ingest import run_ingest_cycle
 
 logger = get_logger(__name__)
@@ -54,6 +60,7 @@ class WorkerLoopStats:
     iterations: int = 0
     ingest_cycles: int = 0
     analysis_cycles: int = 0
+    correlation_cycles: int = 0
     last_cursor: datetime | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -72,6 +79,10 @@ async def run_worker_loop(
     initial_window_seconds: float = 900.0,
     ingest_max_pages: int = 5,
     stats: WorkerLoopStats | None = None,
+    correlation_enabled: bool = True,
+    correlation_lookback_seconds: float = 21_600.0,
+    correlation_max_events: int = 5_000,
+    analysis_enabled: bool = True,
 ) -> None:
     """Sonsuz döngü: her aralıkta ingest + analiz; stop_event ile çıkar."""
     if policy is None:
@@ -93,6 +104,10 @@ async def run_worker_loop(
                 metrics=metrics,
                 ingest_max_pages=ingest_max_pages,
                 state=state,
+                correlation_enabled=correlation_enabled,
+                correlation_lookback_seconds=correlation_lookback_seconds,
+                correlation_max_events=correlation_max_events,
+                analysis_enabled=analysis_enabled,
             )
         except (AnalysisError, StorageError) as exc:
             # Altyapı hatası: tur başarısız; cursor korunur (yeniden deneme
@@ -122,6 +137,10 @@ async def _run_once(
     metrics: AnalysisMetrics,
     ingest_max_pages: int,
     state: WorkerLoopStats,
+    correlation_enabled: bool,
+    correlation_lookback_seconds: float,
+    correlation_max_events: int,
+    analysis_enabled: bool,
 ) -> datetime:
     """Tek tur: ingest (opsiyonel) + analiz; yeni cursor döner."""
     # --- 1) Ingest (kaynak yapılandırılmışsa) ---
@@ -151,27 +170,53 @@ async def _run_once(
         if latest is not None:
             cursor = latest + timedelta(microseconds=1)
 
-    # --- 2) Analiz (pending event'ler) ---
-    analysis_result = await run_analysis_cycle(
-        sessionmaker, analyzer, batch_size=batch_size, metrics=metrics
-    )
-    state.analysis_cycles += 1
-    logger.info(
-        "worker_analysis_cycle",
-        pending=analysis_result.pending_seen,
-        completed=analysis_result.completed,
-        failed=analysis_result.failed,
-        skipped=analysis_result.skipped,
-    )
-    snapshot = metrics.snapshot()
-    logger.info(
-        "worker_analysis_metrics",
-        total=snapshot.total,
-        schema_valid_rate=round(snapshot.schema_valid_rate, 4),
-        p50_ms=snapshot.p50_ms,
-        p95_ms=snapshot.p95_ms,
-        error_rate=round(snapshot.error_rate, 4),
-    )
+    # --- 2) Korelasyon (etkin kurallar; kill switch ile atlanır) ---
+    # SIRA KARARI (Faz 06): korelasyon ANALİZDEN ÖNCE çalışır. Gerekçe:
+    # korelasyon tamamen yerel/deterministiktir (harici bağımlılığı yoktur);
+    # model (Ollama) erişilemezse analiz fail-fast ile turu bitirir ama
+    # korelasyon tespiti bu durumdan ETKİLENMEMELİDİR (savunma sürekliliği).
+    if correlation_enabled:
+        correlation_result = await run_correlation_cycle(
+            sessionmaker,
+            lookback_seconds=correlation_lookback_seconds,
+            max_events=correlation_max_events,
+        )
+        state.correlation_cycles += 1
+        logger.info(
+            "worker_correlation_cycle",
+            events_scanned=correlation_result.events_scanned,
+            rules_evaluated=correlation_result.rules_evaluated,
+            new=correlation_result.new_correlations,
+            hits=correlation_result.hits,
+            rule_errors=len(correlation_result.rule_errors),
+        )
+
+    # --- 3) Analiz (pending event'ler; kill switch ile atlanır) ---
+    if analysis_enabled:
+        analysis_result = await run_analysis_cycle(
+            sessionmaker, analyzer, batch_size=batch_size, metrics=metrics
+        )
+        state.analysis_cycles += 1
+        logger.info(
+            "worker_analysis_cycle",
+            pending=analysis_result.pending_seen,
+            completed=analysis_result.completed,
+            failed=analysis_result.failed,
+            skipped=analysis_result.skipped,
+        )
+        snapshot = metrics.snapshot()
+        logger.info(
+            "worker_analysis_metrics",
+            total=snapshot.total,
+            schema_valid_rate=round(snapshot.schema_valid_rate, 4),
+            p50_ms=snapshot.p50_ms,
+            p95_ms=snapshot.p95_ms,
+            error_rate=round(snapshot.error_rate, 4),
+        )
+    else:
+        # Kill switch: ANALYSIS_ENABLED=false → Ollama'ya çağrı YAPILMAZ
+        # (/ready "disabled" ile aynı anlambilim; Faz 06 doğrulama bulgusu).
+        logger.info("worker_analysis_skipped_disabled")
     return cursor
 
 

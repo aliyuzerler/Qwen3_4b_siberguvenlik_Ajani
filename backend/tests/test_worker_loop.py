@@ -59,6 +59,21 @@ async def _count(maker: Any, model: Any) -> int:
         )
 
 
+async def _correlation_count(maker: Any) -> int:
+    """correlations satır sayısı (korelasyon tespit kanıtı)."""
+    from app.models.correlation import Correlation
+
+    return await _count(maker, Correlation)
+
+
+async def _sync_catalog(maker: Any) -> None:
+    """Korelasyon döngüsü DB'den kural okur → katalogu senkronla."""
+    from app.services.correlation.repository import CorrelationRepository
+    from app.services.correlation.rules import build_default_catalog
+
+    await CorrelationRepository(maker).sync_rule_catalog(build_default_catalog())
+
+
 async def _wait_until(predicate: Any, *, timeout: float = 3.0) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -192,6 +207,127 @@ class TestSingleTurn:
         assert await _count(maker, Event) == 1
         assert await _count(maker, Analysis) == 1
         assert len(stats.errors) >= 1  # ilk turun hatası kaydedildi, döngü yaşadı
+        await engine.dispose()
+
+
+class TestCorrelationIntegration:
+    """Faz 06: korelasyon adımının döngü entegrasyonu (sıra + kill switch)."""
+
+    async def test_correlation_runs_before_analysis_and_survives_model_failure(
+        self, tmp_path: Any
+    ) -> None:
+        """Analiz (Ollama) başarısız turda bile korelasyon tespiti ÜRETİLİR.
+
+        Sıra kararı (Faz 06): korelasyon analizden önce çalışır; model
+        kesintisi yerel korelasyon savunmasını durdurmaz.
+        """
+        engine, maker = await _make_db(tmp_path, "loop6")
+        await _sync_catalog(maker)
+        recent = datetime.now(UTC)
+        # 6 başarısız giriş burst'i (failed_login_burst eşiği 5):
+        source = _FixedSource(
+            [
+                make_alert(
+                    alert_id=f"940.{i}",
+                    timestamp=recent - timedelta(seconds=180 - i * 20),
+                    rule_id="5710",
+                    rule_level=10,
+                    rule_description="sshd: Brute force trying to get access to the system.",
+                    rule_groups=["syslog", "sshd", "authentication_failed"],
+                )
+                for i in range(6)
+            ]
+        )
+        client = MockOllamaClient(fail_first_n=5)  # analiz her turda başarısız
+        analyzer = make_analyzer(client)
+        stop = asyncio.Event()
+        stats = WorkerLoopStats()
+
+        loop_task = asyncio.create_task(
+            run_worker_loop(
+                maker,
+                analyzer,
+                stop_event=stop,
+                interval_seconds=0.2,
+                batch_size=10,
+                metrics=AnalysisMetrics(),
+                source=source,
+                policy=POLICY,
+                initial_window_seconds=3600,
+                stats=stats,
+            )
+        )
+        async def _correlation_detected() -> bool:
+            return await _correlation_count(maker) >= 1
+
+        await _wait_until(_correlation_detected)
+        stop.set()
+        await asyncio.wait_for(loop_task, timeout=3.0)
+
+        assert await _count(maker, Event) == 6
+        assert await _correlation_count(maker) >= 1  # korelasyon model kesintisinden bağımsız
+        assert await _count(maker, Analysis) == 0  # analiz hiç yazılamadı (fail-fast)
+        assert stats.correlation_cycles >= 1
+        assert len(stats.errors) >= 1  # analiz hatası kaydedildi
+        await engine.dispose()
+
+    async def test_analysis_kill_switch_skips_analysis_but_not_correlation(
+        self, tmp_path: Any
+    ) -> None:
+        """ANALYSIS_ENABLED=false → Ollama çağrısı YAPILMAZ; korelasyon çalışır.
+
+        Bulgu kapanışı (Faz 06 bağımsız doğrulama F1): kill switch artık
+        döngüde uygulanır (/ready "disabled" ile aynı anlambilim).
+        """
+        engine, maker = await _make_db(tmp_path, "loop7")
+        await _sync_catalog(maker)
+        source = _FixedSource(
+            [
+                make_alert(
+                    alert_id=f"950.{i}",
+                    timestamp=datetime.now(UTC) - timedelta(seconds=120 - i * 20),
+                    rule_id="5710",
+                    rule_level=10,
+                    rule_description="sshd: Brute force trying to get access to the system.",
+                    rule_groups=["syslog", "sshd", "authentication_failed"],
+                )
+                for i in range(6)
+            ]
+        )
+        client = MockOllamaClient()
+        analyzer = make_analyzer(client)
+        stop = asyncio.Event()
+        stats = WorkerLoopStats()
+
+        loop_task = asyncio.create_task(
+            run_worker_loop(
+                maker,
+                analyzer,
+                stop_event=stop,
+                interval_seconds=0.2,
+                batch_size=10,
+                metrics=AnalysisMetrics(),
+                source=source,
+                policy=POLICY,
+                initial_window_seconds=3600,
+                stats=stats,
+                analysis_enabled=False,
+            )
+        )
+        async def _two_iterations() -> bool:
+            return stats.iterations >= 2
+
+        await _wait_until(_two_iterations)
+        stop.set()
+        await asyncio.wait_for(loop_task, timeout=3.0)
+
+        assert await _count(maker, Event) == 6
+        assert await _count(maker, Analysis) == 0
+        assert stats.analysis_cycles == 0
+        assert len(client.calls) == 0  # modele TEK çağrı bile yapılmadı
+        assert await _correlation_count(maker) >= 1  # korelasyon kill switch'ten etkilenmez
+        assert stats.correlation_cycles >= 1
+        assert stats.errors == []  # atlanan adım hata sayılmaz
         await engine.dispose()
 
 

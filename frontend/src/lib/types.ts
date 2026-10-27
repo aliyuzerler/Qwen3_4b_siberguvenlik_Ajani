@@ -150,3 +150,91 @@ export interface SettingsResponse {
   };
   notifications: { enabled: boolean; roadmap_note: string };
 }
+
+// --- Correlations (Faz 06) ---------------------------------------------------
+
+/** Kural çıktısı: LLM alanı BİLİNÇLİ OLARAK YOKTUR (analyses ayrı tabloda). */
+export interface CorrelationEvidence {
+  group_fields?: string[];
+  group_value?: Record<string, string>;
+  agent_names?: string[];
+  src_ips?: string[];
+  matched_rule_ids?: string[];
+  alert_ids?: string[];
+  first_alert_ids?: string[];
+  then_alert_ids?: string[];
+  [key: string]: unknown;
+}
+
+export interface CorrelationListItem {
+  id: string;
+  rule_key: string;
+  rule_name: string;
+  rule_version: number;
+  window_start: string;
+  window_end: string;
+  event_count: number;
+  max_rule_level: number;
+  hit_count: number;
+  first_hit_at: string;
+  last_hit_at: string;
+  evidence: CorrelationEvidence;
+}
+
+export interface CorrelationLinkedEvent {
+  id: string;
+  timestamp: string;
+  alert_id: string;
+  rule_id: string;
+  rule_level: number;
+  rule_description: string;
+  agent_name: string | null;
+  src_ip: string | null;
+  analysis: AnalysisSummary | null; // LLM yorumu ayrı nesne
+}
+
+export interface CorrelationDetail extends CorrelationListItem {
+  created_at: string;
+  events: CorrelationLinkedEvent[];
+}
+
+export interface CorrelationListResponse {
+  items: CorrelationListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface CorrelationRuleItem {
+  key: string;
+  name: string;
+  description: string;
+  version: number;
+  kind: string;
+  params: {
+    kind: string;
+    window_seconds: number;
+    threshold?: number;
+    group_by: string[];
+    match_rule_ids?: string[];
+    match_rule_groups?: string[];
+    match_min_level?: number;
+    then_rule_ids?: string[];
+    then_rule_groups?: string[];
+    [key: string]: unknown;
+  };
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CorrelationRuleListResponse {
+  items: CorrelationRuleItem[];
+}
+
+export interface CorrelationRuleUpdateResponse {
+  key: string;
+  enabled: boolean;
+  result: "updated" | "unchanged";
+}

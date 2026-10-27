@@ -34,6 +34,9 @@ class AuditAction:
     REFRESH_SUCCESS = "auth.refresh.success"
     REFRESH_FAILED = "auth.refresh.failed"
     BOOTSTRAP_ADMIN_CREATED = "auth.bootstrap.admin_created"
+    # Faz 06: korelasyon kuralı sürüm senkronu ve operatör toggle izleri
+    CORRELATION_RULE_SYNCED = "correlation.rule.synced"
+    CORRELATION_RULE_UPDATED = "correlation.rule.updated"
 
 
 # Kod içi yazma izni: yalnızca bu sabitler audit_log.action'a yazılabilir.
@@ -45,6 +48,8 @@ ALLOWED_ACTIONS = frozenset(
         AuditAction.REFRESH_SUCCESS,
         AuditAction.REFRESH_FAILED,
         AuditAction.BOOTSTRAP_ADMIN_CREATED,
+        AuditAction.CORRELATION_RULE_SYNCED,
+        AuditAction.CORRELATION_RULE_UPDATED,
     }
 )
 

@@ -1,0 +1,555 @@
+{
+  "meta": {
+    "synthetic": true,
+    "license": "SENTETIK - egitim/test amacli; gercek saldiri verisi DEGILDIR",
+    "description": "Faz 06 korelasyon motoru icin ETIKETLI sentetik senaryolar. Tum alanlar uydurmadir (RFC 5737 dokuman IP araliklari, ornek host adlari). Bu kayitlarin gercek saldiri verisi gibi sunulmasi yasaktir; her senaryo label alaniyla benign/malicious olarak acikca etiketlidir.",
+    "schema_version": 1,
+    "rules_under_test": [
+      "failed_login_burst",
+      "suspicious_change_after_login",
+      "repeated_alert"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "normal_bakim",
+      "label": "benign",
+      "description": "SENTETIK normal bakim: tek planli giris ve saatler sonra tek yapilandirma kaydi; kural esiklerinin altinda kalir, tespit URETilmemeli.",
+      "expected": {
+        "failed_login_burst": false,
+        "suspicious_change_after_login": false,
+        "repeated_alert": false
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.100001",
+          "timestamp": "2026-10-26T06:00:00Z",
+          "rule_id": "5715",
+          "rule_level": 3,
+          "rule_description": "sshd: authentication success (bakim penceresi).",
+          "rule_groups": ["syslog", "sshd", "authentication_success"],
+          "agent_id": "101",
+          "agent_name": "maint-host-01",
+          "src_ip": "203.0.113.10",
+          "full_log": "Oct 26 06:00:00 maint-host-01 sshd[1001]: Accepted password for bakim"
+        },
+        {
+          "alert_id": "1792970000.100002",
+          "timestamp": "2026-10-26T09:30:00Z",
+          "rule_id": "554",
+          "rule_level": 8,
+          "rule_description": "User added to system (planli servis hesabi).",
+          "rule_groups": ["adduser", "system_audit"],
+          "agent_id": "101",
+          "agent_name": "maint-host-01",
+          "src_ip": "203.0.113.10",
+          "full_log": "Oct 26 09:30:00 maint-host-01 useradd[1002]: new user: name=svc_backup"
+        }
+      ]
+    },
+    {
+      "id": "basarisiz_login_burst",
+      "label": "malicious",
+      "description": "SENTETIK kaba kuvvet: ayni sunucuda 2 dakikada 6 basarisiz ssh girisi; failed_login_burst ve repeated_alert tespit URETmeli.",
+      "expected": {
+        "failed_login_burst": true,
+        "suspicious_change_after_login": false,
+        "repeated_alert": true
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.200001",
+          "timestamp": "2026-10-26T09:58:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 09:58:00 web-server-02 sshd[2001]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.200002",
+          "timestamp": "2026-10-26T09:58:24Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 09:58:24 web-server-02 sshd[2002]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.200003",
+          "timestamp": "2026-10-26T09:58:48Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 09:58:48 web-server-02 sshd[2003]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.200004",
+          "timestamp": "2026-10-26T09:59:12Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 09:59:12 web-server-02 sshd[2004]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.200005",
+          "timestamp": "2026-10-26T09:59:36Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 09:59:36 web-server-02 sshd[2005]: Failed password for test"
+        },
+        {
+          "alert_id": "1792970000.200006",
+          "timestamp": "2026-10-26T10:00:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "102",
+          "agent_name": "web-server-02",
+          "src_ip": "203.0.113.50",
+          "full_log": "Oct 26 10:00:00 web-server-02 sshd[2006]: Failed password for oracle"
+        }
+      ]
+    },
+    {
+      "id": "giris_sonrasi_supheli_degisiklik",
+      "label": "malicious",
+      "description": "SENTETIK yetki suruklenmesi: basarili girisi 6 dakika icinde kullanici ekleme izler; suspicious_change_after_login tespit URETmeli.",
+      "expected": {
+        "failed_login_burst": false,
+        "suspicious_change_after_login": true,
+        "repeated_alert": false
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.300001",
+          "timestamp": "2026-10-26T09:00:00Z",
+          "rule_id": "5715",
+          "rule_level": 3,
+          "rule_description": "sshd: authentication success.",
+          "rule_groups": ["syslog", "sshd", "authentication_success"],
+          "agent_id": "103",
+          "agent_name": "app-server-03",
+          "src_ip": "203.0.113.77",
+          "full_log": "Oct 26 09:00:00 app-server-03 sshd[3001]: Accepted password for deploy"
+        },
+        {
+          "alert_id": "1792970000.300002",
+          "timestamp": "2026-10-26T09:06:00Z",
+          "rule_id": "554",
+          "rule_level": 8,
+          "rule_description": "User added to system.",
+          "rule_groups": ["adduser", "system_audit"],
+          "agent_id": "103",
+          "agent_name": "app-server-03",
+          "src_ip": "203.0.113.77",
+          "full_log": "Oct 26 09:06:00 app-server-03 useradd[3002]: new user: name=auditd2"
+        },
+        {
+          "alert_id": "1792970000.300003",
+          "timestamp": "2026-10-26T09:07:00Z",
+          "rule_id": "553",
+          "rule_level": 8,
+          "rule_description": "User added to group.",
+          "rule_groups": ["adduser", "system_audit"],
+          "agent_id": "103",
+          "agent_name": "app-server-03",
+          "src_ip": "203.0.113.77",
+          "full_log": "Oct 26 09:07:00 app-server-03 gpasswd[3003]: user auditd2 added to sudo group"
+        }
+      ]
+    },
+    {
+      "id": "duplicate_event",
+      "label": "malicious",
+      "description": "SENTETIK kaba kuvvet + DUPLIKE teslimat: her alert iki kez gelir (ayni alert_id); tek korelasyon satiri URETmeli, tekrar teslimat hit sayacini artirmali.",
+      "expected": {
+        "failed_login_burst": true,
+        "suspicious_change_after_login": false,
+        "repeated_alert": true
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.400001",
+          "timestamp": "2026-10-26T09:40:00Z",
+          "rule_id": "5716",
+          "rule_level": 10,
+          "rule_description": "sshd: Attempt to login using a non-existent user.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "104",
+          "agent_name": "db-server-04",
+          "src_ip": "203.0.113.90",
+          "full_log": "Oct 26 09:40:00 db-server-04 sshd[4001]: Invalid user oracle"
+        },
+        {
+          "alert_id": "1792970000.400002",
+          "timestamp": "2026-10-26T09:40:30Z",
+          "rule_id": "5716",
+          "rule_level": 10,
+          "rule_description": "sshd: Attempt to login using a non-existent user.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "104",
+          "agent_name": "db-server-04",
+          "src_ip": "203.0.113.90",
+          "full_log": "Oct 26 09:40:30 db-server-04 sshd[4002]: Invalid user postgres"
+        },
+        {
+          "alert_id": "1792970000.400003",
+          "timestamp": "2026-10-26T09:41:00Z",
+          "rule_id": "5716",
+          "rule_level": 10,
+          "rule_description": "sshd: Attempt to login using a non-existent user.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "104",
+          "agent_name": "db-server-04",
+          "src_ip": "203.0.113.90",
+          "full_log": "Oct 26 09:41:00 db-server-04 sshd[4003]: Invalid user admin"
+        },
+        {
+          "alert_id": "1792970000.400004",
+          "timestamp": "2026-10-26T09:41:30Z",
+          "rule_id": "5716",
+          "rule_level": 10,
+          "rule_description": "sshd: Attempt to login using a non-existent user.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "104",
+          "agent_name": "db-server-04",
+          "src_ip": "203.0.113.90",
+          "full_log": "Oct 26 09:41:30 db-server-04 sshd[4004]: Invalid user test"
+        },
+        {
+          "alert_id": "1792970000.400005",
+          "timestamp": "2026-10-26T09:42:00Z",
+          "rule_id": "5716",
+          "rule_level": 10,
+          "rule_description": "sshd: Attempt to login using a non-existent user.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "104",
+          "agent_name": "db-server-04",
+          "src_ip": "203.0.113.90",
+          "full_log": "Oct 26 09:42:00 db-server-04 sshd[4005]: Invalid user guest"
+        }
+      ]
+    },
+    {
+      "id": "farkli_sunucular",
+      "label": "malicious",
+      "description": "SENTETIK iki sunucuda es zamanli kaba kuvvet: grup anahtari agent oldugu icin IKI AYRI tespit URETmeli (teklesme/birlesme olmamali).",
+      "expected": {
+        "failed_login_burst": true,
+        "suspicious_change_after_login": false,
+        "repeated_alert": true
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.500001",
+          "timestamp": "2026-10-26T09:20:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "105",
+          "agent_name": "web-server-05",
+          "src_ip": "203.0.113.51",
+          "full_log": "Oct 26 09:20:00 web-server-05 sshd[5001]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.500002",
+          "timestamp": "2026-10-26T09:20:30Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "105",
+          "agent_name": "web-server-05",
+          "src_ip": "203.0.113.51",
+          "full_log": "Oct 26 09:20:30 web-server-05 sshd[5002]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.500003",
+          "timestamp": "2026-10-26T09:21:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "105",
+          "agent_name": "web-server-05",
+          "src_ip": "203.0.113.51",
+          "full_log": "Oct 26 09:21:00 web-server-05 sshd[5003]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.500004",
+          "timestamp": "2026-10-26T09:21:30Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "105",
+          "agent_name": "web-server-05",
+          "src_ip": "203.0.113.51",
+          "full_log": "Oct 26 09:21:30 web-server-05 sshd[5004]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.500005",
+          "timestamp": "2026-10-26T09:22:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "105",
+          "agent_name": "web-server-05",
+          "src_ip": "203.0.113.51",
+          "full_log": "Oct 26 09:22:00 web-server-05 sshd[5005]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.500006",
+          "timestamp": "2026-10-26T09:20:10Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "106",
+          "agent_name": "mail-server-06",
+          "src_ip": "203.0.113.52",
+          "full_log": "Oct 26 09:20:10 mail-server-06 sshd[5006]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.500007",
+          "timestamp": "2026-10-26T09:20:40Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "106",
+          "agent_name": "mail-server-06",
+          "src_ip": "203.0.113.52",
+          "full_log": "Oct 26 09:20:40 mail-server-06 sshd[5007]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.500008",
+          "timestamp": "2026-10-26T09:21:10Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "106",
+          "agent_name": "mail-server-06",
+          "src_ip": "203.0.113.52",
+          "full_log": "Oct 26 09:21:10 mail-server-06 sshd[5008]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.500009",
+          "timestamp": "2026-10-26T09:21:40Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "106",
+          "agent_name": "mail-server-06",
+          "src_ip": "203.0.113.52",
+          "full_log": "Oct 26 09:21:40 mail-server-06 sshd[5009]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.500010",
+          "timestamp": "2026-10-26T09:22:10Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "106",
+          "agent_name": "mail-server-06",
+          "src_ip": "203.0.113.52",
+          "full_log": "Oct 26 09:22:10 mail-server-06 sshd[5010]: Failed password for admin"
+        }
+      ]
+    },
+    {
+      "id": "zaman_sirasi_bozuk",
+      "label": "malicious",
+      "description": "SENTETIK zaman sirasi bozuk teslimat: ayni burst olaylari ingest listesinde karisik sira ile gelir; motor zaman sirasina sokmali, tespit URETmeli.",
+      "expected": {
+        "failed_login_burst": true,
+        "suspicious_change_after_login": false,
+        "repeated_alert": true
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.600003",
+          "timestamp": "2026-10-26T09:10:40Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:10:40 cache-server-07 sshd[6003]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.600001",
+          "timestamp": "2026-10-26T09:10:00Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:10:00 cache-server-07 sshd[6001]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.600005",
+          "timestamp": "2026-10-26T09:11:20Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:11:20 cache-server-07 sshd[6005]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.600002",
+          "timestamp": "2026-10-26T09:10:20Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:10:20 cache-server-07 sshd[6002]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.600004",
+          "timestamp": "2026-10-26T09:11:00Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:11:00 cache-server-07 sshd[6004]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.600006",
+          "timestamp": "2026-10-26T09:11:40Z",
+          "rule_id": "5712",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": "107",
+          "agent_name": "cache-server-07",
+          "src_ip": "203.0.113.60",
+          "full_log": "Oct 26 09:11:40 cache-server-07 sshd[6006]: Failed password for test"
+        }
+      ]
+    },
+    {
+      "id": "eksik_alan",
+      "label": "benign",
+      "description": "SENTETIK eksik alan: 6 basarisiz giris ama agent_id yok; motor carpilmamali ve None==None sahte gruplasmasi YAPMAMALI (0 tespit).",
+      "expected": {
+        "failed_login_burst": false,
+        "suspicious_change_after_login": false,
+        "repeated_alert": false
+      },
+      "alerts": [
+        {
+          "alert_id": "1792970000.700001",
+          "timestamp": "2026-10-26T09:45:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:45:00 unknown-host sshd[7001]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.700002",
+          "timestamp": "2026-10-26T09:45:30Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:45:30 unknown-host sshd[7002]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.700003",
+          "timestamp": "2026-10-26T09:46:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:46:00 unknown-host sshd[7003]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.700004",
+          "timestamp": "2026-10-26T09:46:30Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:46:30 unknown-host sshd[7004]: Failed password for root"
+        },
+        {
+          "alert_id": "1792970000.700005",
+          "timestamp": "2026-10-26T09:47:00Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:47:00 unknown-host sshd[7005]: Failed password for admin"
+        },
+        {
+          "alert_id": "1792970000.700006",
+          "timestamp": "2026-10-26T09:47:30Z",
+          "rule_id": "5710",
+          "rule_level": 10,
+          "rule_description": "sshd: Brute force trying to get access to the system.",
+          "rule_groups": ["syslog", "sshd", "authentication_failed"],
+          "agent_id": null,
+          "agent_name": null,
+          "src_ip": "203.0.113.70",
+          "full_log": "Oct 26 09:47:30 unknown-host sshd[7006]: Failed password for admin"
+        }
+      ]
+    }
+  ]
+}

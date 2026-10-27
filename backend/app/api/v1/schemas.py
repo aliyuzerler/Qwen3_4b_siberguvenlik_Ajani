@@ -239,3 +239,86 @@ class NotificationSettings(BaseModel):
 
     enabled: bool = False
     roadmap_note: str = "Bildirimler Faz 08'te planlanacaktır."
+
+
+# --- Correlations (Faz 06) ---------------------------------------------------
+#
+# Kural çıktısı ile LLM yorumu AYRI taşınır: korelasyon şemalarında HİÇBİR
+# ai_* alanı yoktur; bağlı olayların model kayıtları AnalysisSummary olarak,
+# olay başına AYRI nesnede gelir (AGENTS.md §5/§8).
+
+
+class CorrelationListItem(BaseModel):
+    """Korelasyon liste satırı: kural kimliği + pencere + tekrar sayaçları."""
+
+    id: str
+    rule_key: str
+    rule_name: str
+    rule_version: int = Field(ge=1)
+    window_start: datetime
+    window_end: datetime
+    event_count: int = Field(ge=1)
+    max_rule_level: int = Field(ge=0, le=15)
+    hit_count: int = Field(ge=1)
+    first_hit_at: datetime
+    last_hit_at: datetime
+    evidence: dict[str, Any]
+
+
+class CorrelationLinkedEvent(BaseModel):
+    """Korelasyona bağlı olay: orijinal kanıt + AYRI model kaydı özeti."""
+
+    id: str
+    timestamp: datetime
+    alert_id: str
+    rule_id: str
+    rule_level: int
+    rule_description: str
+    agent_name: str | None = None
+    src_ip: str | None = None
+    analysis: AnalysisSummary | None = None  # LLM yorumu ayrı nesne
+
+
+class CorrelationDetail(CorrelationListItem):
+    created_at: datetime
+    events: list[CorrelationLinkedEvent] = Field(default_factory=list)
+
+
+class CorrelationListResponse(BaseModel):
+    items: list[CorrelationListItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    pages: int = Field(ge=0)
+
+
+class CorrelationRuleItem(BaseModel):
+    """Kural kataloğu satırı (secret yok; params açıklanabilir yapıdadır)."""
+
+    key: str
+    name: str
+    description: str
+    version: int = Field(ge=1)
+    kind: str
+    params: dict[str, Any]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CorrelationRuleListResponse(BaseModel):
+    items: list[CorrelationRuleItem]
+
+
+class CorrelationRuleUpdateRequest(BaseModel):
+    """Kural etkinlik güncellemesi (admin; değişim audit'e yazılır)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class CorrelationRuleUpdateResponse(BaseModel):
+    key: str
+    enabled: bool
+    result: str  # "updated" | "unchanged"

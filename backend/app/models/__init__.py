@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from app.models.analysis import Analysis
 from app.models.audit import AuditLog
+from app.models.correlation import Correlation, CorrelationEvent, CorrelationRule
 from app.models.event import Event
 from app.models.user import User
 
-__all__ = ["Analysis", "AuditLog", "Event", "User"]
+__all__ = [
+    "Analysis",
+    "AuditLog",
+    "Correlation",
+    "CorrelationEvent",
+    "CorrelationRule",
+    "Event",
+    "User",
+]
