@@ -29,3 +29,7 @@ next-env.d.ts
 .idea/
 .vscode/
 .DS_Store
+
+# --- Faz 09 benchmark koşum çıktıları (sonuçlar repoya girmez) ---
+backend/benchmarks/results/
+backend/benchmarks/results_smoke/

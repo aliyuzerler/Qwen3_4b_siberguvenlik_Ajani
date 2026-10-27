@@ -51,6 +51,13 @@ ignore = []
 # FastAPI Query() bağımsız değişken kalıbı B008 üretir; Annotated kalıbına
 # geçiş yerine API katmanında kalıp izni (çerçeve dokümantasyonuyla uyumlu).
 "app/api/*" = ["B008"]
+# Faz 09 benchmark runner: yalnızca SABİT argümanlı git/ollama introspection
+# (kullanıcı girdisi yok; S603 çağrı başına noqa ile işaretlidir).
+"benchmarks/*" = ["S603", "S607"]
+# Dataset üreteci: full_log içerikleri bayt-deterministik sentetik log
+# metinleridir; satır uzunluğu içerikte anlamlı değildir (JSONL çıktısı
+# lint kapsamı dışıdır).
+"benchmarks/tools/*" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
