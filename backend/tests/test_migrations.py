@@ -396,3 +396,37 @@ class TestRemediationMigrations:
         assert again.returncode == 0, again.stderr
         tables = await _table_names(migration_db)
         assert {"remediation_catalog", "remediation_actions"} <= set(tables)
+
+    # --- Faz 08: rate_limit_counters (paylaşımlı fren deposu) ----------------
+
+    async def test_upgrade_head_creates_rate_limit_counters(self, migration_db: str) -> None:
+        """0006_hardening: birleşik PK + pencere indeksi yerinde."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "rate_limit_counters" in tables
+        columns = await _table_columns(migration_db, "rate_limit_counters")
+        for required in ("key", "window_start", "hit_count"):
+            assert required in columns, f"rate_limit_counters sütunu eksik: {required}"
+        ddl = await _table_sql(migration_db, "rate_limit_counters")
+        # Birleşik birincil anahtar (key, window_start)
+        assert "PRIMARY KEY" in ddl.upper()
+        assert "window_start" in ddl.lower()
+
+    async def test_hardening_downgrade_drops_rate_limit_table(self, migration_db: str) -> None:
+        """Geri dönüş yolu: head → 0005 rate_limit_counters düşer; remediation kalır."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        down = _run_alembic(migration_db, "downgrade", "0005_remediation")
+        assert down.returncode == 0, down.stderr
+        tables = await _table_names(migration_db)
+        assert "rate_limit_counters" not in tables
+        # Önceki faz tabloları etkilenmez:
+        assert "remediation_actions" in tables
+        assert "users" in tables
+
+    async def test_hardening_roundtrip_reupgrade(self, migration_db: str) -> None:
+        """0006 → 0005 → 0006 turu şemayı bozmaz."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        assert _run_alembic(migration_db, "downgrade", "0005_remediation").returncode == 0
+        again = _run_alembic(migration_db, "upgrade", "head")
+        assert again.returncode == 0, again.stderr
+        assert "rate_limit_counters" in await _table_names(migration_db)

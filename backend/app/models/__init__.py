@@ -6,6 +6,7 @@ from app.models.analysis import Analysis
 from app.models.audit import AuditLog
 from app.models.correlation import Correlation, CorrelationEvent, CorrelationRule
 from app.models.event import Event
+from app.models.rate_limit import RateLimitCounter
 from app.models.remediation import RemediationAction, RemediationCatalog
 from app.models.user import User
 
@@ -16,6 +17,7 @@ __all__ = [
     "CorrelationEvent",
     "CorrelationRule",
     "Event",
+    "RateLimitCounter",
     "RemediationAction",
     "RemediationCatalog",
     "User",

@@ -22,7 +22,9 @@ const NAV_ITEMS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/rules", label: "Kurallar" },
   { href: "/remediation", label: "Müdahale" },
   { href: "/agents", label: "Sunucular" },
+  { href: "/hesabim", label: "Hesabım" },
   { href: "/audit", label: "Audit Log", adminOnly: true },
+  { href: "/users", label: "Kullanıcılar", adminOnly: true },
   { href: "/settings", label: "Ayarlar", adminOnly: true },
 ];
 

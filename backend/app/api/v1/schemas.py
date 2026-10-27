@@ -47,6 +47,94 @@ class MeResponse(BaseModel):
     role: str
 
 
+# --- Users (Faz 08 — kullanıcı yönetimi) ------------------------------------
+#
+# "Parola/token/secret değeri HİÇBİR şemada YOKTUR" kuralı burada da geçerli:
+# UserItem password_hash alanı İÇERMEZ (tip seviyesinde sızma yüzeyi kapalı).
+# Parolalar yalnızca istek şemalarında taşınır ve asla yanıt şemasına girmez.
+
+
+class UserItem(BaseModel):
+    """Kullanıcı satırı (parola hash'i dahil DEĞİLDİR)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _uuid_to_str(cls, value: object) -> object:
+        return str(value) if not isinstance(value, str) else value
+
+
+class UserListResponse(BaseModel):
+    items: list[UserItem]
+    total: int
+
+
+class UserCreateRequest(BaseModel):
+    """Yeni kullanıcı (admin). Kullanıcı adı küçük harfe normalize edilir."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    username: str = Field(
+        min_length=3,
+        max_length=64,
+        # Küçük harf normalize sonrası: harf/rakam/. _ - ile başlar
+        pattern=r"^[a-z0-9][a-z0-9._-]{2,63}$",
+    )
+    password: str = Field(min_length=1, max_length=256)
+    role: Literal["viewer", "analyst", "admin"]
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class UserUpdateRequest(BaseModel):
+    """Rol ve/veya aktiflik güncellemesi (admin; her iki alan opsiyonel)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["viewer", "analyst", "admin"] | None = None
+    is_active: bool | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    """Kendi parolasını değiştirme (her kimlikli kullanıcı)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class PasswordResetRequest(BaseModel):
+    """Admin parola sıfırlama (hedef: başka kullanıcı; self'e kapalı)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class PasswordChangeResponse(BaseModel):
+    result: str  # "updated"
+
+
+class UserMutationResponse(BaseModel):
+    """Tek kullanıcı güncelleme yanıtı."""
+
+    user: UserItem
+
+
 # --- Events ----------------------------------------------------------------
 
 
@@ -248,10 +336,17 @@ class RemediationSettings(BaseModel):
 
 
 class NotificationSettings(BaseModel):
-    """Faz 08+ yol haritası yeri (şimdilik boş yapı — UI roadmap kartı)."""
+    """Faz 08+ yol haritası yeri (UI roadmap kartı; implementasyon yok).
+
+    Bildirim entegrasyonu (e-posta/webhook) Faz 08'de yol haritasına yazıldı;
+    kod yolu yoktur — docs/deployment.md §Yol haritası.
+    """
 
     enabled: bool = False
-    roadmap_note: str = "Bildirimler Faz 08'te planlanacaktır."
+    roadmap_note: str = (
+        "Bildirim entegrasyonu (e-posta/webhook) yol haritasındadır: "
+        "docs/deployment.md §Yol haritası. Şu an bildirim kod yolu yoktur."
+    )
 
 
 # --- Correlations (Faz 06) ---------------------------------------------------

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.db import dispose_engine
@@ -159,3 +160,84 @@ async def test_ready_ollama_disabled_by_kill_switch(tmp_path: object) -> None:
         response = await http_client.get("/api/v1/ready")
     assert response.json()["components"]["ollama"] == "disabled"
     await dispose_engine()
+
+
+# --- Faz 08: disk dolması alarmı ---------------------------------------------
+
+
+class TestDiskComponent:
+    async def test_disk_component_present_and_up(self, client: AsyncClient) -> None:
+        response = await client.get("/api/v1/ready")
+        assert response.status_code == 200
+        body = response.json()
+        # Faz 08: disk bileşeni rapora dahildir (sandbox'ta alan bol → up)
+        assert body["components"]["disk"] in ("up", "low_space", "unknown")
+
+    async def test_low_space_reported_below_threshold(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import shutil as _shutil
+
+        class FakeUsage:
+            total = 100 * 1024**3
+            free = 5 * 1024**3  # %5 boş → eşik (10) altı
+            used = 95 * 1024**3
+
+        monkeypatch.setattr(_shutil, "disk_usage", lambda _path: FakeUsage())
+        from httpx import ASGITransport as _T
+
+        application = create_app(
+            make_settings(tmp_path, disk_min_free_percent=10)
+        )
+        try:
+            transport = _T(app=application)
+            async with AsyncClient(transport=transport, base_url="http://testserver") as http:
+                response = await http.get("/api/v1/ready")
+                assert response.status_code == 200  # low_space 503 DEĞİLDİR
+                assert response.json()["components"]["disk"] == "low_space"
+        finally:
+            await dispose_engine()
+
+    async def test_unknown_when_disk_stat_fails(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import shutil as _shutil
+
+        def _raise(_path: object) -> object:
+            raise OSError("statfs failed (sentetik)")
+
+        monkeypatch.setattr(_shutil, "disk_usage", _raise)
+        from httpx import ASGITransport as _T
+
+        application = create_app(make_settings(tmp_path))
+        try:
+            transport = _T(app=application)
+            async with AsyncClient(transport=transport, base_url="http://testserver") as http:
+                response = await http.get("/api/v1/ready")
+                assert response.status_code == 200
+                assert response.json()["components"]["disk"] == "unknown"
+        finally:
+            await dispose_engine()
+
+    async def test_up_when_above_threshold(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import shutil as _shutil
+
+        class FakeUsage:
+            total = 100 * 1024**3
+            free = 50 * 1024**3  # %50 boş → eşiğin üstü
+            used = 50 * 1024**3
+
+        monkeypatch.setattr(_shutil, "disk_usage", lambda _path: FakeUsage())
+        from httpx import ASGITransport as _T
+
+        application = create_app(make_settings(tmp_path, disk_min_free_percent=10))
+        try:
+            transport = _T(app=application)
+            async with AsyncClient(transport=transport, base_url="http://testserver") as http:
+                response = await http.get("/api/v1/ready")
+                assert response.status_code == 200
+                assert response.json()["components"]["disk"] == "up"
+        finally:
+            await dispose_engine()

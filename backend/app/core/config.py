@@ -160,6 +160,30 @@ class Settings(BaseSettings):
     # Görev ayrımı istisnası: false → öneren kendi önerisini onaylayamaz
     # (varsayılan). true yalnızca tek-admin küçük kurulumlar içindir (runbook).
     remediation_allow_self_approval: bool = False
+    # Faz 08: prod'da observe_only zorunludur ("üretime geçişte observe-only
+    # varsayılanı"). dry_run'a bilinçli ihtiyaç olursa BU anahtar ayrıca
+    # açılmalıdır (iki bağımsız kapı ilkesi; varsayılan kapalı).
+    remediation_prod_allow_dry_run: bool = False
+
+    # --- Sertleştirme (Faz 08) ---
+    # Rate limit deposu: "memory" tek proses (varsayılan, geliştirme); "database"
+    # çok proses/çok düğümlü dağıtımda paylaşımlı sabit pencere sayacı
+    # (rate_limit_counters tablosu; Redis gerektirmez).
+    rate_limit_backend: Literal["memory", "database"] = "memory"
+    # Disk dolması alarmı: /ready "disk" bileşeni boş yüzde bu eşiğin altına
+    # inerse "low_space" raporlar (log'a uyarı yazar; 503 DÖNMEZ).
+    disk_min_free_percent: int = Field(default=10, ge=1, le=50)
+    # Disk kontrolü yapılacak yol (compose'da konteyner katmanı; host cron'unda
+    # pgdata birimi ayrıca izlenir — docs/deployment.md).
+    disk_check_path: str = "."
+    # HSTS başlığı: uygulama doğrudan TLS ile servis ediliyorsa açılır; TLS
+    # reverse proxy'de sonlandırılıyorsa proxy sorumludur (docs/deployment.md).
+    hsts_enabled: bool = False
+    # İstek gövdesi tavanı (bayt): DoS yüzeyini kısmak için JSON gövdeleri
+    # sınırlanır (aşım → 413). En büyük meşru gövde: login/öneri formları.
+    max_request_body_bytes: int = Field(default=1_048_576, ge=256, le=16_777_216)
+    # Kullanıcı parola alt sınırı (karakter): panel kullanıcı yönetimi (Faz 08).
+    user_password_min_length: int = Field(default=12, ge=8, le=128)
 
     @field_validator("database_url")
     @classmethod
@@ -210,6 +234,50 @@ class Settings(BaseSettings):
                 "APP_ENV=prod iken REMEDIATION_ALLOW_BLOCKED_ACTIONS=true "
                 "kullanılamaz: firewall/SSH/hesap aksiyonları üretimde iki "
                 "bağımsız kapıyla da açılamaz (docs/remediation-runbook.md)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_prod_observe_only(self) -> Settings:
+        """Üretimde müdahale modu observe_only'dir (phases/08).
+
+        dry_run simülasyondur ve sistem değişikliği yapmaz; yine de üretimde
+        varsayılan TEK ve KATI: observe_only. İstisna iki bağımsız kapı ister:
+        REMEDIATION_PROD_ALLOW_DRY_RUN=true bilinçli, ayrı bir anahtardır.
+        """
+        if (
+            self.app_env == "prod"
+            and self.policy_mode != "observe_only"
+            and not self.remediation_prod_allow_dry_run
+        ):
+            raise ValueError(
+                "APP_ENV=prod iken POLICY_MODE yalnızca 'observe_only' olabilir "
+                "(üretime geçişte observe-only varsayılanı). dry_run gerçekten "
+                "gerekiyorsa REMEDIATION_PROD_ALLOW_DRY_RUN=true yapın (bilinçli "
+                "istisna; docs/deployment.md)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_prod_cors(self) -> Settings:
+        """Üretimde localhost CORS kaynağı yapılandırma hatasıdır (sessiz telafi yok)."""
+        if self.app_env == "prod":
+            for origin in self.cors_origin_list:
+                if "localhost" in origin or "127.0.0.1" in origin:
+                    raise ValueError(
+                        f"APP_ENV=prod iken CORS kaynağı localhost/127.0.0.1 olamaz "
+                        f"('{origin}'). Üretimde gerçek panel kaynağını belirtin."
+                    )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_prod_wazuh_tls(self) -> Settings:
+        """Üretimde Wazuh Indexer TLS doğrulaması KAPALI olamaz (phases/08: TLS)."""
+        if self.app_env == "prod" and not self.wazuh_verify_tls:
+            raise ValueError(
+                "APP_ENV=prod iken WAZUH_VERIFY_TLS=false kullanılamaz: sertifika "
+                "doğrulaması kapatmak ortadaki adam saldırısına açar. Kendi CA'nızı "
+                "konteynere güven olarak ekleyin (docs/deployment.md §TLS)."
             )
         return self
 

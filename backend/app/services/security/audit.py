@@ -48,6 +48,13 @@ class AuditAction:
     REMEDIATION_ACTION_REPLAYED = "remediation.action.replayed"
     REMEDIATION_ACTION_RATE_LIMITED = "remediation.action.rate_limited"
     REMEDIATION_CATALOG_UPDATED = "remediation.catalog.updated"
+    # Faz 08: panel kullanıcı yönetimi (admin API) ve parola işlemleri.
+    # Parola DEĞERİ asla yazılmaz; yalnızca hedef kullanıcı adı + rol/is_active
+    # gibi yapısal detay.
+    USER_CREATED = "user.created"
+    USER_UPDATED = "user.updated"
+    USER_PASSWORD_CHANGED = "user.password_changed"  # noqa: S105  # eylem adı, parola değil
+    USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105  # eylem adı, parola değil
 
 
 # Kod içi yazma izni: yalnızca bu sabitler audit_log.action'a yazılabilir.
@@ -70,6 +77,11 @@ ALLOWED_ACTIONS = frozenset(
         AuditAction.REMEDIATION_ACTION_REPLAYED,
         AuditAction.REMEDIATION_ACTION_RATE_LIMITED,
         AuditAction.REMEDIATION_CATALOG_UPDATED,
+        # Faz 08: kullanıcı yönetimi
+        AuditAction.USER_CREATED,
+        AuditAction.USER_UPDATED,
+        AuditAction.USER_PASSWORD_CHANGED,
+        AuditAction.USER_PASSWORD_RESET,
     }
 )
 

@@ -1,11 +1,15 @@
-"""Bellek içi kayan pencere hız freni (Faz 05).
+"""Bellek içi kayan pencere hız freni (Faz 05; Faz 08 async arayüz).
 
 Kapsam: /auth/login ve /auth/refresh uçlarına IP başına dakikalık tavan
-(brute-force freni; phases/05 "rate limit" gereksinimi).
+(brute-force freni; phases/05 "rate limit" gereksinimi) + müdahale
+öneri/yürütme freni (Faz 07, kullanıcı başına saatlik).
 
-Bilinçli sınırlama (belgelenmiş): sayaçlar uygulama belleğindedir ve tek
-proses için geçerlidir. Compose dağıtımı tek backend prosesi çalıştırır;
-Faz 08 (hardening) çok prosessli dağıtımda paylaşımlı depoya taşınacaktır.
+Faz 08 arayüz kararları:
+- Frenler artık TEK async sözleşmeyle kullanılır: `await limiter.check(key)`.
+- MemoryRateLimiter bu sözleşmenin tek-proses uygulamasıdır (uygulama
+  belleği; compose tek proses varsayılanı).
+- Çok prosesli/çok düğümlü dağıtım için paylaşımlı uygulama
+  db_rate_limit.DatabaseRateLimiter'dır (RATE_LIMIT_BACKEND=database).
 """
 
 from __future__ import annotations
@@ -81,3 +85,29 @@ class RateLimiter:
     def snapshot(self) -> dict[str, Any]:
         """Test/gözlemlenebilirlik için sayaç anlık görüntüsü."""
         return {key: len(value) for key, value in self._hits.items()}
+
+
+class MemoryRateLimiter:
+    """RateLimiter'ın async sözleşme sarmalayıcısı (Faz 08).
+
+    Endpoint'ler `await limiter.check(key)` çağırır; bellek içi sayaç
+    senkrondur ve tek olay döngüsünde yarışsızdır — sarmalayıcı yalnızca
+    DatabaseRateLimiter ile aynı arayüzü sağlar (yer değiştirilebilirlik).
+    """
+
+    def __init__(self, inner: RateLimiter) -> None:
+        self._inner = inner
+
+    async def check(self, key: str) -> RateLimitDecision:
+        return self._inner.check(key)
+
+    def reset(self) -> None:
+        """Tüm sayaçları temizler (test yardımcısı)."""
+        self._inner.reset()
+
+    @property
+    def limit(self) -> int:
+        return self._inner.limit
+
+    def snapshot(self) -> dict[str, Any]:
+        return self._inner.snapshot()

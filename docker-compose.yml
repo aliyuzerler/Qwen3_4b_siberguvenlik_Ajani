@@ -1,16 +1,27 @@
-# ajant — yerel/staging Docker Compose taslağı (Faz 01)
+# ajant — yerel/staging Docker Compose (Faz 01 taslağı → Faz 08 sertleştirme)
 #
-# NOTLAR:
-# - Sandbox'ta Docker bulunmadığından bu dosyanın doğrulaması kullanıcı
-#   makinesinde yapılır (bkz. docs/phase-00-discovery.md, risk R4).
-# - Ollama kullanıcı makinesinde çalıştığı için compose içinde KOŞMAZ;
-#   backend host.docker.internal üzerinden erişir (Linux'ta extra_hosts gerekir).
-# - Parolalar SAHTE yerel geliştirme değeridir; staging/üretimde secret
-#   yönetimi Faz 08'de tamamlanacaktır (AGENTS.md §3).
+# Faz 08 sertleştirme (phases/08):
+# - Ağ segmentasyonu: frontend_net (public) ve backend_net (internal) AYRIDIR;
+#   db ve backend yalnızca backend_net üzerindedir ve dışarıdan erişilemez.
+# - DB portu host'a AÇILMAZ (yalnızca `expose`).
+# - Non-root: backend (uid 10001) ve frontend (node) imajları non-root çalışır;
+#   no-new-privileges her serviste etkin; backend/frontend cap_drop ALL.
+# - Backend konteyneri read_only dosya sistemi + tmpfs /tmp ile çalışır
+#   (kalıcı yazma yüzeyi yalnızca DB birimidir).
+# - Log rotation: json-file driver max-size/max-file (host disk dolmasına
+#   karşı ilk savunma; ayrıca docs/deployment.md §log).
+# - Ollama compose içinde KOŞMAZ (kullanıcı makinesinde; host.docker.internal);
+#   endpoint iç ağ kısıtı config validator ile zorunlu (app/core/config.py).
+# - Parolalar SAHTE yerel geliştirme değeridir; staging/üretimde gerçek
+#   secret'lar backend/.env ile verilir (git'e girmez) — docs/deployment.md
+#   §secret yönetimi.
 
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_DB: ajant
       POSTGRES_USER: ajant
@@ -25,9 +36,25 @@ services:
     # Faz 08'e kadar DB portu host'a AÇILMAZ (yalnızca backend erişir).
     expose:
       - "5432"
+    networks:
+      - backend_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     build: ./backend
+    restart: unless-stopped
+    # Faz 08: salt-okunur kök dosya sistemi (kalıcı yazma: yalnızca /tmp tmpfs).
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Faz 05 notu (doğrulayıcı bulgusu B2): şema migration'ları KONTEYNER
     # BAŞLANGICINDA uygulanır (alembic upgrade head) — lifespan'deki bootstrap
     # users tablosuna baktığından boş pgdata ile ilk kurulumda şemasız
@@ -39,22 +66,58 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://ajant:SAHTE_YEREL_PAROLA_DEGISTIR@db:5432/ajant
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # Faz 08: çok prosesli dağıtım planlanırsa paylaşımlı fren deposu
+      # (tek proses kalacaksa memory de güvenlidir).
+      RATE_LIMIT_BACKEND: memory
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      # Yalnızca loopback'e bağlanır; internete açık değildir. TLS reverse
+      # proxy (Caddy/nginx) bu porta loopback üzerinden bağlanır —
+      # docs/deployment.md §TLS.
+      - "127.0.0.1:8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - backend_net
+      - frontend_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+    networks:
+      - frontend_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:
+
+# Faz 08 ağ segmentasyonu:
+# - frontend_net: tarayıcı → frontend, backend (API çağrıları)
+# - backend_net (internal: true): backend ↔ db; DIŞARI ÇIKIŞI YOK
+#   (db host'a ve internete kapalı; Ollama host.docker.internal üzerinden
+#   yalnızca backend'den erişilir)
+networks:
+  frontend_net: {}
+  backend_net:
+    internal: true

@@ -357,3 +357,27 @@ export interface RemediationActionResponse {
   action: RemediationActionDetail;
   replayed: boolean;
 }
+
+// --- Faz 08: kullanıcı yönetimi (backend: schemas.py Users bölümü) ---------
+
+export interface UserItem {
+  id: string;
+  username: string;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface UserListResponse {
+  items: UserItem[];
+  total: number;
+}
+
+export interface UserMutationResponse {
+  user: UserItem;
+}
+
+export interface PasswordChangeResponse {
+  result: string;
+}

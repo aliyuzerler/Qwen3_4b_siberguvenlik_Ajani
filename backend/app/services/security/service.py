@@ -60,7 +60,12 @@ def _normalize_username(username: str) -> str:
 async def authenticate_user(
     session: AsyncSession, *, username: str, password: str
 ) -> AuthenticatedUser | None:
-    """Kullanıcı adı + parola doğrulaması; başarısızlıkta None döner."""
+    """Kullanıcı adı + parola doğrulaması; başarısızlıkta None döner.
+
+    Faz 08: is_active=false kullanıcı için de None döner — devre dışı
+    bırakılan hesap YENİ token edinemez (mevcut token'lar zaten her istekte
+    DB aktiflik kontrolüyle düşer; iki katman savunma derinliğidir).
+    """
     stmt = select(User).where(User.username == _normalize_username(username))
     user: User | None = (await session.scalars(stmt)).first()
     if user is None:
@@ -69,6 +74,10 @@ async def authenticate_user(
         verify_password(_DECOY_HASH, password)
         return None
     if not verify_password(user.password_hash, password):
+        return None
+    if not user.is_active:
+        # Doğru parola olsa bile pasif hesap giremez (genel None: kullanıcı
+        # durumu ayrımı istemciye sızmaz — GENERIC_LOGIN_FAILED mesajı).
         return None
     return AuthenticatedUser(
         id=str(user.id), username=user.username, role=user.role, is_active=user.is_active

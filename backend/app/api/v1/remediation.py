@@ -342,7 +342,7 @@ async def create_remediation_action(
             },
         )
     limiter = request.app.state.remediation_rate_limiter
-    decision = limiter.check(f"remediation:{current_user.username}")
+    decision = await limiter.check(f"remediation:{current_user.username}")
     if not decision.allowed:
         await _audit_from_context(
             request,
@@ -516,7 +516,7 @@ async def execute_remediation_action(
             },
         )
     limiter = request.app.state.remediation_rate_limiter
-    decision = limiter.check(f"remediation:{current_user.username}")
+    decision = await limiter.check(f"remediation:{current_user.username}")
     if not decision.allowed:
         await _audit_from_context(
             request,

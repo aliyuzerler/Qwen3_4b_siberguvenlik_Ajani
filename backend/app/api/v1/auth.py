@@ -74,7 +74,7 @@ async def login(
     audit = AuditService(session)
     ip = _client_ip(request)
 
-    decision = limiter.check(f"login:{ip or 'bilinmeyen'}")
+    decision = await limiter.check(f"login:{ip or 'bilinmeyen'}")
     if not decision.allowed:
         await audit.record(
             action=AuditAction.LOGIN_RATE_LIMITED,
@@ -133,14 +133,18 @@ async def refresh(
     """Refresh token → yeni token çifti (rotation).
 
     Eski access token'ın kalan ömrü boyunca geçerliliği devam eder
-    (stateless JWT); jti denylist ile anında iptal Faz 08'de.
+    (stateless JWT). ANINDA İPTAL kararı (Faz 08): jti denylist yerine
+    DB aktiflik kontrolü tercih edildi — load_active_user her istekte
+    users.is_active okur; kullanıcı devre dışı bırakıldığında tüm access
+    ve refresh token'ları bir sonraki istekte değersizleşir (denylist
+    altyapısına gerek kalmaz; kararı: phase-08-verification.md).
     """
     settings: Settings = request.app.state.settings
     limiter = request.app.state.auth_rate_limiter
     audit = AuditService(session)
     ip = _client_ip(request)
 
-    decision = limiter.check(f"refresh:{ip or 'bilinmeyen'}")
+    decision = await limiter.check(f"refresh:{ip or 'bilinmeyen'}")
     if not decision.allowed:
         await audit.record(
             action=AuditAction.REFRESH_FAILED,
