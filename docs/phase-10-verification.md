@@ -96,8 +96,9 @@ docker compose up -d --build
 docker compose logs backend | grep alembic            # migration tamam mı
 curl -s http://127.0.0.1:8000/api/v1/ready            # 4 bileşen beklenen mi
 ollama pull qwen3:4b
-DATABASE_URL="postgresql+asyncpg://ajant:<parola>@127.0.0.1:5432/ajant" \
-  python3 scripts/seed_staging_events.py              # {"stored":6,...}
+# §2-H konteyner-içi besleyici (db host'a açık DEĞİLDİR):
+docker compose run --rm -v "$(pwd)/scripts:/scripts:ro" \
+  backend python /scripts/seed_staging_events.py      # {"stored":6,...}
 # .env: WORKER_LOOP_ENABLED=true → docker compose up -d backend
 sleep 45 && docker compose logs backend | grep worker_analysis_cycle
 # beklenen: completed>0 (gerçek model)
@@ -107,7 +108,24 @@ sleep 45 && docker compose logs backend | grep worker_analysis_cycle
 
 Tam senaryo listesi: `docs/phase-10-operations.md` §2 (A-J) ve §12.
 
-## 7. Sonuç
+## 7. Bağımsız doğrulayıcı bulguları ve kapatma (Task ID: 10-test → 10-fix)
+
+Bağımsız doğrulayıcı önerisi: **PASS-with-findings**. Kapatılanlar:
+
+| Bulgu | Şiddet | Kapatma |
+|---|---|---|
+| F1 seed komutu host topolojisinde çalışmaz (db yalnız expose; scripts/ imajda yok) | ORTA | operations.md §2-H + verification §6: konteyner-içi koşum (`docker compose run --rm -v "$(pwd)/scripts:/scripts:ro" backend …`) birincil yol; host formu yalnız 5432 bilinçli açıldığında, uyarıyla |
+| F2 "bozuk çıktı" komutu etkisizdi (compose environment literal'i .env/shell'i ezer) | ORTA | operations.md §6: compose override dosyası + `--host 0.0.0.0` bağlama şartı + temizlik adımı |
+| F3 §3 loopback bağlaması bridge trafiğini reddederdi (gizli manuel adım) | ORTA | operations.md §3 + deployment.md §1: topolojiye göre bağlama (docker0 IP ↔ 127.0.0.1) + doğrulama komutu |
+| F4 `benchmarks.cli` modülü yok | DÜŞÜK | §3/§12: kanonik `python -m benchmarks.run_benchmark check …` (phase-09-benchmark.md §6 ile aynı) |
+| F5 smoke sabit sleep fragil olabilir | bilgi | kabul edildi — kapalı-port hataları hızlı, pay geniş; belgeli risk |
+| F6 tekrar-koşum örneği variant sınıfını göstermiyordu | bilgi | §2-H örnek çıktısı `{"stored":0,"duplicate":0,"variant":6,...}` + açıklama |
+| F7 smoke /tmp fake dump artığı | bilgi | smoke Evre 7 sonuna temizlik eklendi |
+
+Kapatma sonrası kapılar: smoke **33/33 PASS** (yeniden koşum), üretim app/
+koduna dokunulmadı (`git diff` yalnız docs/ + scripts/).
+
+## 8. Sonuç
 
 Geliştirici koşumu: **PASS** — kabul satırı 11'in beş ölçütünden dördü
 (staging akış sözleşmesi, backup, monitoring, rollback planı + dokümantasyon)

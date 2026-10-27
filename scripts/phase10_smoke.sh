@@ -186,6 +186,7 @@ check "restore: onaysız koşum reddedildi (exit 1)" "1" "$([ "$RS_RC" -eq 1 ] &
 RS2_RC=0
 ./scripts/restore_db.sh >/tmp/ajant10_restore2.log 2>&1 || RS2_RC=$?
 check "restore: argümansız çağrı exit 2" "1" "$([ "$RS2_RC" -eq 2 ] && echo 1 || echo 0)"
+rm -f /tmp/ajant10_fake.dump
 
 echo "==============================================="
 echo "FAZ 10 SMOKE SONUCU: $pass PASS, $fail FAIL"

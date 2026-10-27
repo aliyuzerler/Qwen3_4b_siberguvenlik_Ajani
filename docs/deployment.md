@@ -32,8 +32,11 @@ tarayıcı ──TLS──► Caddy/nginx :443                                  
 - **Ollama compose içinde KOŞMAZ** (kullanıcı makinesinde). Backend config
   validator'ı genel FQDN/IP'yi reddeder (`OLLAMA_ALLOW_PUBLIC_HOST=false`
   varsayılan) — "Ollama endpoint'i internete açık bırakılmama" gereksinimi
-  iki katmanda zorlanır: config + ağ erişimi. Ollama'nın kendisi de
-  `OLLAMA_HOST=127.0.0.1` ile yalnızca loopback'e bağlanmalıdır.
+  iki katmanda zorlanır: config + ağ erişimi. Ollama dış dünyaya KAPALI
+  bağlanmalıdır: backend konteynerdeyse `host.docker.internal` trafiği host'a
+  docker bridge gateway'inden geldiğinden `OLLAMA_HOST=<docker0-IP>`
+  (örn. 172.17.0.1); konteynersız geliştirmede `127.0.0.1`
+  (ayrıntı: docs/phase-10-operations.md §3).
 - **Wazuh Indexer erişimi**: backend konteynerinden tek yönlü, salt okunur.
   Indexer (9200) yalnızca backend'in bulunduğu ağdan erişilebilir olmalı;
   host güvenlik duvarında Wazuh API/Indexer'ın gerekli ağlarla sınırlandırıldığı

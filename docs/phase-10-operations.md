@@ -113,16 +113,23 @@ SİLİN.
 **H) Test alert besleme (staging; gerçek Wazuh yokken):**
 
 ```bash
-# gerçek Wazuh YOK: sentetik, ŞİMDİ damgalı 6 alert (üretim ingest yoluyla)
-DATABASE_URL="postgresql+asyncpg://ajant:<parola>@127.0.0.1:5432/ajant" \
-  python3 scripts/seed_staging_events.py
-# beklenen tek satır JSON: {"fetched":6,"stored":6,"duplicate":0,"variant":0,"failed":0}
-# tekrar koşum: {"stored":0, ...} — YENİ SATIR ÜRETMEZ (idempotent)
+# gerçek Wazuh YOK: sentetik, ŞİMDİ damgalı 6 alert (üretim ingest yoluyla).
+# db host'a port AÇILMADIĞI (yalnız expose) ve scripts/ imajda olmadığı için
+# besleyici BACKEND KONTEYNERİNDE koşulur (scripts tek seferlik bağlanır;
+# DATABASE_URL compose env'inden gelir — alembic şeması startup'ta uygulanmış olur):
+docker compose run --rm \
+  -v "$(pwd)/scripts:/scripts:ro" backend python /scripts/seed_staging_events.py
+# beklenen: {"fetched":6,"stored":6,"duplicate":0,"variant":0,"failed":0}
+# tekrar koşum: {"stored":0,"duplicate":0,"variant":6,"failed":0}
+#   → YENİ SATIR ÜRETMEZ (idempotency_key tekil). Taze zaman damgası içerik
+#     farkı yarattığından Faz 03 sınıflandırması bunları "variant" sayar.
 ```
 
-Not: `seed_staging_events.py` alembic şeması UYGULANMIŞ bir DB ister (compose
-başlangıcında otomatik uygulanır). Gerçek Wazuh bağlıysa bu adım ATLANIR —
-alert'ler §4 doğrulamasından sonra worker ingest'le gelir.
+Not: Gerçek Wazuh bağlıysa bu adım ATLANIR — alert'ler §4 doğrulamasından
+sonra worker ingest'le gelir. Konteynersız (bare uvicorn) staging'de ve
+5432 bilinçli olarak host'a açılmışsa script host'tan da koşulabilir:
+`DATABASE_URL="postgresql+asyncpg://ajant:<parola>@127.0.0.1:5432/ajant" \
+python3 scripts/seed_staging_events.py` (varsayılan topolojide 5432 AÇIK DEĞİLDİR).
 
 **I) AI analizi doğrulaması** — `backend/.env`:
 
@@ -156,12 +163,18 @@ curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:8000/api/v1/events |
 curl -fsSL https://ollama.com/install.sh | sh
 systemctl enable --now ollama
 
-# 2) Yalnızca loopback'e bağla (dış dünyaya KAPALI — deployment.md §4)
+# 2) Yalnızca docker bridge'e bağla (dış dünyaya KAPALI — deployment.md §4).
+#    Backend KONTEYNERDE koştuğu için host.docker.internal trafiği host'a
+#    docker0 bridge gateway'inden gelir; loopback (127.0.0.1) bu trafiği
+#    KABUL ETMEZ → Ollama'yı bridge IP'sine bağlayın:
+ip -4 addr show docker0 | grep inet    # örn. 172.17.0.1/16
 systemctl edit ollama
 #   [Service]
-#   Environment="OLLAMA_HOST=127.0.0.1:11434"
+#   Environment="OLLAMA_HOST=172.17.0.1:11434"
 systemctl restart ollama
-ss -tlnp | grep 11434     # beklenen: 127.0.0.1:11434 (0.0.0.0 DEĞİL!)
+ss -tlnp | grep 11434     # beklenen: 172.17.0.1:11434 (0.0.0.0/:: DEĞİL)
+# NOT: backend'i konteynersız (bare uvicorn) koşturan geliştirme ortamında
+# doğru bağlama 127.0.0.1'dir; staging topolojisi belirleyicidir.
 
 # 3) Model indir ve doğrula (tag sabit: qwen3:4b)
 ollama pull qwen3:4b      # ~2.5 GB (q4_K_M)
@@ -177,7 +190,8 @@ ollama ps                 # model yüklüyken total_size + %CPU görülmeli
 # 6) Host bağlantı doğrulaması
 curl -s http://127.0.0.1:11434/api/version
 
-# 7) Konteyner → host bağlantı doğrulaması (compose extra_hosts sayesinde)
+# 7) Konteyner → host bağlantı doğrulaması (compose extra_hosts sayesinde;
+#    adım 2'deki bridge bağlaması bu trafiği kabul eder)
 docker compose exec backend python -c \
   "import urllib.request; print(urllib.request.urlopen('http://host.docker.internal:11434/api/version', timeout=3).read()[:60])"
 ```
@@ -191,9 +205,9 @@ Ardından **F adımındaki `/ready`** çağrısında `ollama: "up"` beklenir:
 
 ```bash
 cd backend
-python -m benchmarks.cli check --base-url http://127.0.0.1:11434   # exit 0 beklenir
-python -m benchmarks.cli run --llm ollama --baseline qwen_prompt_only ...
-# ayrıntılı komutlar: docs/phase-09-benchmark.md §6
+python -m benchmarks.run_benchmark check --base-url http://127.0.0.1:11434 --model-tag qwen3:4b
+python -m benchmarks.run_benchmark run --baseline qwen_prompt_only ...
+# ayrıntılı komutlar: docs/phase-09-benchmark.md §6 (CLI modülü: benchmarks.run_benchmark)
 ```
 
 **Güvenlik kuralı:** `OLLAMA_ALLOW_PUBLIC_HOST=false` (varsayılan) genel
@@ -261,7 +275,7 @@ bash scripts/phase08_smoke.sh   # 39/39 PASS (başlıklar, 413, kullanıcı akı
 |---|---|---|
 | Normal analiz (gerçek model) | §2-H besle + §2-I worker açık | `completed` + kanıt/öneri alanları; severity orijinal değer kalır |
 | Ollama KESİK | `systemctl stop ollama` → yeni alert besle → tur bekle | satır YAZILMAZ, event pending kalır; döngü `worker_cycle_failed` loglar ve YAŞAR; Ollama dönünce otomatik analiz |
-| Model BOZUK çıktı üretiyor | `python3 scripts/fake_ollama_server.py --port 11450` + `OLLAMA_BASE_URL=http://127.0.0.1:11450 docker compose up -d backend` | `/ready` ollama=up; her event `analysis_failed` satırı (retry tükenir); uydurma completed YOK |
+| Model BOZUK çıktı üretiyor | `python3 scripts/fake_ollama_server.py --host 0.0.0.0 --port 11450 &` (konteyner trafiği bridge'ten gelir → 0.0.0.0 bağlama ŞART) + compose override: `services.backend.environment.OLLAMA_BASE_URL: http://host.docker.internal:11450` içeren geçici yaml ile `docker compose -f docker-compose.yml -f <override.yml> up -d backend` (compose `environment:` bloğu `.env`/shell env'ini EZER — override'sız etkisizdir) | `/ready` ollama=up; her event `analysis_failed` satırı (retry tükenir); uydurma completed YOK; temizlik: override'sız `docker compose up -d backend` |
 | Kill switch | `ANALYSIS_ENABLED=false` + restart | `/ready` ollama=disabled; Ollama'ya çağrı YAPILMAZ |
 
 **KANIT UYARISI:** `fake_ollama_server.py` bir TEST DÜZENEĞİDİR — çıktıları
@@ -379,7 +393,9 @@ curl -s http://127.0.0.1:8000/api/v1/ready
 
 # 2) Gerçek model uçtan uca (§2-D/§3)
 ollama pull qwen3:4b && curl -s http://127.0.0.1:8000/api/v1/ready | grep ollama
-# §2-H/I: seed_staging_events.py + WORKER_LOOP_ENABLED=true → completed beklenir
+# §2-H (konteyner-içi besleyici): docker compose run --rm \
+#   -v "$(pwd)/scripts:/scripts:ro" backend python /scripts/seed_staging_events.py
+# §2-I: WORKER_LOOP_ENABLED=true → worker_analysis_cycle completed>0 (gerçek model)
 
 # 3) Gerçek Wazuh ingest (§4; docs/wazuh-staging.md)
 # indexer .env → /ready wazuh=up → worker ingest fetched>0 → panelde olaylar
@@ -388,7 +404,8 @@ ollama pull qwen3:4b && curl -s http://127.0.0.1:8000/api/v1/ready | grep ollama
 ./scripts/backup_db.sh ./backups && ./scripts/restore_db.sh backups/<dump>   # evet onayı
 
 # 5) Gerçek model benchmark (Faz 09 açık kalemleriyle birlikte)
-cd backend && python -m benchmarks.cli check --base-url http://127.0.0.1:11434
+cd backend && python -m benchmarks.run_benchmark check \
+  --base-url http://127.0.0.1:11434 --model-tag qwen3:4b
 
 # 6) Yetkili staging'de port taraması + TLS proxy (deployment.md §4)
 nmap -sT -p- <staging-ip>   # beklenen: yalnızca 22/443 görünür (8000/3000 loopback)
