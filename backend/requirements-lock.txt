@@ -8,3 +8,5 @@ pydantic-settings==2.13.1
 pydantic==2.12.5
 structlog==25.5.0
 uvicorn==0.44.0
+PyJWT==2.12.1
+argon2-cffi==25.1.0

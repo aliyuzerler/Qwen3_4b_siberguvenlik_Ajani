@@ -44,10 +44,22 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(min_length=32)
     database_url: str
 
-    # --- JWT (Faz 05'te kullanılacak) ---
+    # --- JWT (Faz 05: panel auth) ---
     jwt_algorithm: str = "HS256"
     jwt_access_ttl_minutes: int = Field(default=15, ge=1, le=120)
     jwt_refresh_ttl_minutes: int = Field(default=1440, ge=5, le=60 * 24 * 7)
+
+    # --- Panel auth (Faz 05) ---
+    # İlk kurulumda users tablosu boşsa 'admin' kullanıcısı BU parolayla
+    # oluşturulur (bootstrap). Parola ASLA log/yanıta yansıtılmaz; kullanıcı
+    # oluşturulduktan sonra bu değer yok sayılır. Boş bırakılırsa hiçbir
+    # kullanıcı otomatik oluşturulmaz (uyarı loglanır; panel girişi kapalı olur).
+    admin_bootstrap_password: str | None = None
+    admin_bootstrap_username: str = "admin"
+    # Giriş/refresh uçlarına IP başına dakikalık istek tavanı (brute-force
+    # freni). Uygulama bellek içi sayaçtır; çok prosessli dağıtımda Faz 08'de
+    # paylaşımlı depoya taşınacaktır.
+    auth_rate_limit_per_minute: int = Field(default=10, ge=1, le=600)
 
     # --- Wazuh Indexer (Faz 02) — alert kaynağı; doldurulana kadar devre dışı ---
     # Kanıt: Wazuh Server API'de (55000) alert OKUMA endpoint'i yoktur (resmi spec'te

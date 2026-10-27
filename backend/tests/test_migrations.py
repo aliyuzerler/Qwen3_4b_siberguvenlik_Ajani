@@ -170,9 +170,74 @@ class TestMigrations:
         assert "ck_analyses_completed_has_assessment" in ddl
 
     async def test_downgrade_drops_analyses_before_events(self, migration_db: str) -> None:
-        """Geri dönüş yolu: tek adım downgrade analyses'i düşürür; events kalır."""
+        """Geri dönüş yolu: head'den iki adım downgrade analyses'i düşürür; events kalır.
+
+        Faz 05 notu: head artık 0003_auth; "analyses" adımı için downgrade
+        hedefi açıkça 0001_events olarak verilir (tek adım -1 artık 0002'ye
+        döner — analyses hâlâ yerinde olur, bu beklenen davranıştır).
+        """
         assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
-        assert _run_alembic(migration_db, "downgrade", "-1").returncode == 0
+        down = _run_alembic(migration_db, "downgrade", "0001_events")
+        assert down.returncode == 0, down.stderr
         tables = await _table_names(migration_db)
         assert "analyses" not in tables
         assert "events" in tables  # önceki faz tablosu etkilenmez
+
+    # --- Faz 05: users + audit_log migration'ı ------------------------------
+
+    async def test_upgrade_head_creates_auth_tables(self, migration_db: str) -> None:
+        """0003_auth: users + audit_log tabloları, sütunlar ve CHECK kısıtları."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "users" in tables
+        assert "audit_log" in tables
+
+        user_columns = await _table_columns(migration_db, "users")
+        for required in (
+            "id",
+            "username",
+            "password_hash",
+            "role",
+            "is_active",
+            "created_at",
+            "last_login_at",
+        ):
+            assert required in user_columns, f"users sütunu eksik: {required}"
+        user_ddl = await _table_sql(migration_db, "users")
+        assert "ck_users_role" in user_ddl
+        assert "UNIQUE" in user_ddl.upper()  # username unique
+
+        audit_columns = await _table_columns(migration_db, "audit_log")
+        for required in (
+            "id",
+            "created_at",
+            "actor",
+            "actor_user_id",
+            "action",
+            "resource",
+            "detail",
+            "client_ip",
+            "request_id",
+            "note",
+        ):
+            assert required in audit_columns, f"audit_log sütunu eksik: {required}"
+
+    async def test_downgrade_auth_drops_tables_before_analyses(self, migration_db: str) -> None:
+        """head → 0002: users ve audit_log düşer; analyses/events etkilenmez."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        down = _run_alembic(migration_db, "downgrade", "0002_analyses")
+        assert down.returncode == 0, down.stderr
+        tables = await _table_names(migration_db)
+        assert "users" not in tables
+        assert "audit_log" not in tables
+        assert "analyses" in tables
+        assert "events" in tables
+
+    async def test_password_hash_column_never_stores_plaintext_schema_note(
+        self, migration_db: str
+    ) -> None:
+        """users.password_hash sütun adı düz metin parola sütunu DEĞİLDİR (şema kanıtı)."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        columns = await _table_columns(migration_db, "users")
+        assert "password" not in columns, "düz metin parola sütunu olmamalı"
+        assert "password_hash" in columns

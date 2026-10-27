@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
+
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "ajant — Güvenlik Paneli",
-  description:
-    "Wazuh + Qwen3 4B güvenlik olayları analiz paneli (yalnızca gözlem modu)",
+  title: "ajant Güvenlik Paneli",
+  description: "Wazuh + Qwen3 4B güvenlik ajanı paneli (yalnızca gözlem modu)",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body className="min-h-screen bg-slate-950 text-slate-200 antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

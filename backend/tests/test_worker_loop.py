@@ -202,8 +202,16 @@ class TestDefaults:
         assert application.state.worker_task is None
 
     async def test_worker_loop_starts_and_stops_cleanly(self, tmp_path: Any) -> None:
-        """WORKER_LOOP_ENABLED=true → task başlar; lifespan kapanışı temiz biter."""
+        """WORKER_LOOP_ENABLED=true → task başlar; lifespan kapanışı temiz biter.
+
+        Faz 05 notu: lifespan artık startup bootstrap'ı içerir (users
+        tablosuna bakar) → şema önce kurulur.
+        """
         application = create_app(make_settings(tmp_path, worker_loop_enabled=True))
+        from app.core.db import Base
+
+        async with application.state.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
         async with lifespan(application):
             task = application.state.worker_task
             assert task is not None

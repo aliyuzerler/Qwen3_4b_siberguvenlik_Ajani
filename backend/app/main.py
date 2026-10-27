@@ -27,12 +27,13 @@ from app.core.middleware import RequestIdMiddleware
 from app.services.analysis import build_ollama_client
 from app.services.analysis.analyzer import EventAnalyzer
 from app.services.analysis.metrics import AnalysisMetrics
+from app.services.security import RateLimiter
 from app.services.wazuh import WazuhStatusTracker, build_alert_source
 from app.workers.loop import WorkerLoopStats, run_worker_loop
 
 logger = get_logger(__name__)
 
-API_VERSION = "0.2.0"
+API_VERSION = "0.3.0"
 
 # Kapanışta worker task'ının temiz çıkışına tanınan süre (saniye)
 WORKER_SHUTDOWN_TIMEOUT_SECONDS = 5.0
@@ -59,6 +60,25 @@ def build_analyzer(settings: Settings, client: object, metrics: AnalysisMetrics)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     worker_task: asyncio.Task[None] | None = None
+
+    # Faz 05 bootstrap: users tablosu boşsa ilk admin ADMIN_BOOTSTRAP_PASSWORD
+    # ile oluşturulur. Parola değeri ASLA log'a yazılmaz (yalnızca eylem adı).
+    from app.services.security import bootstrap_admin_if_empty
+    from app.services.security.audit import AuditAction, AuditService
+
+    async with get_sessionmaker()() as bootstrap_session:
+        created = await bootstrap_admin_if_empty(
+            bootstrap_session,
+            username=settings.admin_bootstrap_username,
+            password=settings.admin_bootstrap_password,
+        )
+        if created:
+            await AuditService(bootstrap_session).record(
+                action=AuditAction.BOOTSTRAP_ADMIN_CREATED,
+                actor=settings.admin_bootstrap_username,
+                detail={"mechanism": "startup_bootstrap"},
+            )
+
     if settings.worker_loop_enabled:
         stop_event = asyncio.Event()
         analyzer = build_analyzer(settings, app.state.ollama_client, app.state.analysis_metrics)
@@ -134,6 +154,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.analysis_metrics = AnalysisMetrics()
     application.state.worker_task = None  # döngü ancak lifespan'de (enabled ise) başlar
+    # Faz 05: giriş/refresh brute-force freni (uygulama ömrü boyunca tek örnek)
+    application.state.auth_rate_limiter = RateLimiter(app_settings.auth_rate_limit_per_minute)
 
     application.add_middleware(RequestIdMiddleware)
 
@@ -141,7 +163,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.add_middleware(
             CORSMiddleware,
             allow_origins=app_settings.cors_origin_list,
-            allow_credentials=True,
+            # Kimlik Bearer başlığıyla taşınır (cookie oturumu YOK) →
+            # credentials gerekmez; CSRF yüzeyi kapanır (Faz 05 karar).
+            allow_credentials=False,
             allow_methods=["GET", "POST"],
             allow_headers=["*"],
         )

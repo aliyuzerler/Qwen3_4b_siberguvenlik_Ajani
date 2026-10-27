@@ -24,22 +24,35 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import app.models  # noqa: F401  # Event/Analysis'i Base.metadata'ya kaydeder
+import app.models  # noqa: F401  # Event/Analysis/User/AuditLog'u Base.metadata'ya kaydeder
 from app.core.config import Settings
-from app.core.db import Base, dispose_engine, register_sqlite_fk_pragma
-from app.main import create_app
+from app.core.db import (
+    Base,
+    dispose_engine,
+    get_sessionmaker,
+    register_sqlite_fk_pragma,
+)
+from app.main import create_app, lifespan
 from app.services.analysis.errors import AnalysisError
 from app.services.wazuh.models import WazuhAlert
 
 # YALNIZCA TEST İÇİN sahte secret (gerçek değildir, repoda örnek olarak işaretlidir)
 TEST_JWT_SECRET = "test-sadece-sahte-secret-0123456789abcdef-0123456789abcdef"  # noqa: S105
 
+# Faz 05: yalnızca test bootstrap parolası (gerçek değildir)
+TEST_ADMIN_PASSWORD = "test-admin-parolasi-1234"  # noqa: S105
+
 # Deterministik erişilemez Ollama portu (discard — bağlantı anında reddedilir)
 UNREACHABLE_OLLAMA_URL = "http://127.0.0.1:9"
 
 
 def make_settings(tmp_path: Path, **overrides: object) -> Settings:
-    """Test için izole Settings üretir; gerçek .env dosyasını okumaz."""
+    """Test için izole Settings üretir; gerçek .env dosyasını okumaz.
+
+    Faz 05 notu: varsayılan olarak TEST bootstrap parolası verilir — böylece
+    panel testleri admin ile giriş yapabilir. Parolasız senaryoyu test eden
+    testler None'ı AÇIKÇA geçer.
+    """
     values: dict[str, object] = {
         "app_env": "dev",
         "jwt_secret": TEST_JWT_SECRET,
@@ -47,6 +60,7 @@ def make_settings(tmp_path: Path, **overrides: object) -> Settings:
         "log_level": "INFO",
         "cors_origins": "",
         "ollama_base_url": UNREACHABLE_OLLAMA_URL,
+        "admin_bootstrap_password": TEST_ADMIN_PASSWORD,
         "_env_file": None,
     }
     values.update(overrides)
@@ -55,11 +69,61 @@ def make_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 @pytest_asyncio.fixture
 async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
-    """Test istemcisi: her test için izole uygulama + sqlite DB."""
+    """Test istemcisi: her test için izole uygulama + sqlite DB.
+
+    Faz 05 notu: şema create_all ile kurulur ve lifespan AÇIK çalıştırılır
+    (httpx ASGITransport lifespan'i tetiklemez) — böylece startup
+    bootstrap (users boşsa admin oluşturma) gerçek akışıyla işler.
+    """
     application = create_app(make_settings(tmp_path))
+    async with application.state.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
     transport = ASGITransport(app=application)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as http_client:
+    async with lifespan(application), AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as http_client:
         yield http_client
+    await dispose_engine()
+
+
+@pytest_asyncio.fixture
+async def make_client(tmp_path: Path) -> AsyncIterator[Any]:
+    """Overrides kabul eden istemci fabrikası (auth/RBAC testleri için).
+
+    Kullanım: `client = await make_client(admin_bootstrap_password=...)`.
+    Her çağrı kendi izole DB + uygulama örneğini kurar; en son örnek
+    dispose edilir.
+    """
+    clients: list[AsyncClient] = []
+
+    async def _make(**overrides: object) -> AsyncClient:
+        application = create_app(make_settings(tmp_path, **overrides))
+        async with application.state.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        transport = ASGITransport(app=application)
+        http_client = AsyncClient(transport=transport, base_url="http://testserver")
+        # Bootstrap doğrudan çağrılır (ASGITransport lifespan çalıştırmaz):
+        from app.services.security import bootstrap_admin_if_empty
+        from app.services.security.audit import AuditAction, AuditService
+
+        async with get_sessionmaker()() as bootstrap_session:
+            created = await bootstrap_admin_if_empty(
+                bootstrap_session,
+                username=application.state.settings.admin_bootstrap_username,
+                password=application.state.settings.admin_bootstrap_password,
+            )
+            if created:
+                await AuditService(bootstrap_session).record(
+                    action=AuditAction.BOOTSTRAP_ADMIN_CREATED,
+                    actor=application.state.settings.admin_bootstrap_username,
+                    detail={"mechanism": "startup_bootstrap"},
+                )
+        clients.append(http_client)
+        return http_client
+
+    yield _make
+    for http_client in clients:
+        await http_client.aclose()
     await dispose_engine()
 
 
@@ -213,3 +277,31 @@ class MockOllamaClient:
 
     async def aclose(self) -> None:
         return None
+
+
+# --- Faz 05: panel auth yardımcıları ---------------------------------------
+
+
+async def login_and_headers(
+    client: AsyncClient,
+    *,
+    username: str = "admin",
+    password: str = TEST_ADMIN_PASSWORD,
+) -> dict[str, str]:
+    """Giriş yapar ve Bearer başlığı döndürür (yetki testleri ortak yardımcısı)."""
+    response = await client.post(
+        "/api/v1/auth/login", json={"username": username, "password": password}
+    )
+    assert response.status_code == 200, f"giriş beklenmedik: {response.status_code} {response.text}"
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def auth_settings_overrides(**extra: object) -> dict[str, object]:
+    """Auth testleri için bootstrap parolası ayarlı overrides üretir."""
+    values: dict[str, object] = {
+        "admin_bootstrap_password": TEST_ADMIN_PASSWORD,
+    }
+    values.update(extra)
+    return values
+
