@@ -27,13 +27,14 @@ from app.core.middleware import RequestIdMiddleware
 from app.services.analysis import build_ollama_client
 from app.services.analysis.analyzer import EventAnalyzer
 from app.services.analysis.metrics import AnalysisMetrics
+from app.services.remediation.executor import DryRunExecutor
 from app.services.security import RateLimiter
 from app.services.wazuh import WazuhStatusTracker, build_alert_source
 from app.workers.loop import WorkerLoopStats, run_worker_loop
 
 logger = get_logger(__name__)
 
-API_VERSION = "0.3.0"
+API_VERSION = "0.4.0"
 
 # Kapanışta worker task'ının temiz çıkışına tanınan süre (saniye)
 WORKER_SHUTDOWN_TIMEOUT_SECONDS = 5.0
@@ -88,6 +89,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await CorrelationRepository(get_sessionmaker()).sync_rule_catalog(
         build_default_catalog()
     )
+
+    # Faz 07: müdahale katalog operatör anahtarlarını senkronla (idempotent;
+    # default_blocked aksiyonlar enabled=false başlar — iki bağımsız kapı).
+    from app.services.remediation import sync_remediation_catalog
+
+    await sync_remediation_catalog(get_sessionmaker())
 
     if settings.worker_loop_enabled:
         stop_event = asyncio.Event()
@@ -170,6 +177,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.worker_task = None  # döngü ancak lifespan'de (enabled ise) başlar
     # Faz 05: giriş/refresh brute-force freni (uygulama ömrü boyunca tek örnek)
     application.state.auth_rate_limiter = RateLimiter(app_settings.auth_rate_limit_per_minute)
+    # Faz 07: müdahale istismar freni (kullanıcı başına saatlik) + yürütücü.
+    # YÜRÜTÜCÜ: DryRunExecutor — paketteki TEK somut uygulama; sistemde
+    # değişiklik yapmaz (phases/07: "fake executor"). Gerçek entegrasyon
+    # sınıfı BU FAZDA yazılmaz.
+    application.state.remediation_rate_limiter = RateLimiter(
+        app_settings.remediation_rate_limit_per_hour, window_seconds=3600.0
+    )
+    application.state.remediation_executor = DryRunExecutor()
 
     application.add_middleware(RequestIdMiddleware)
 
@@ -204,5 +219,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         analysis_enabled=app_settings.analysis_enabled,
         worker_loop_enabled=app_settings.worker_loop_enabled,
         correlation_enabled=app_settings.correlation_enabled,
+        remediation_enabled=app_settings.remediation_enabled,
+        remediation_allow_blocked_actions=app_settings.remediation_allow_blocked_actions,
     )
     return application

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # --- Auth -----------------------------------------------------------------
 
@@ -217,6 +217,7 @@ class SettingsResponse(BaseModel):
     retention_days: int
     redaction: RedactionSettings
     worker: WorkerSettings
+    remediation: RemediationSettings
     notifications: NotificationSettings
 
 
@@ -232,6 +233,18 @@ class WorkerSettings(BaseModel):
     interval_seconds: float
     concurrency: int
     batch_size: int
+
+
+class RemediationSettings(BaseModel):
+    """Müdahale hazırlık künyesi (Faz 07; secret yok — yalnızca anahtar durumları)."""
+
+    enabled: bool
+    policy_mode: str
+    approval_ttl_minutes: int
+    rate_limit_per_hour: int
+    allow_blocked_actions: bool
+    allow_self_approval: bool
+    executor_timeout_seconds: float
 
 
 class NotificationSettings(BaseModel):
@@ -322,3 +335,144 @@ class CorrelationRuleUpdateResponse(BaseModel):
     key: str
     enabled: bool
     result: str  # "updated" | "unchanged"
+
+
+# --- Remediation (Faz 07) -----------------------------------------------------
+#
+# "Model eylemi doğrudan başlatamaz" (phases/07): bu şemalarda command/args/
+# shell benzeri serbest alan YOKTUR; params katalog şemalarıyla tiplenmiştir
+# (extra=forbid). Kanıt paketi istemciden ALINMAZ — yalnızca sunucu üretir.
+
+
+class RemediationCatalogItem(BaseModel):
+    """Allowlist katalog satırı (secret yok; risk/rollback açıklamalı)."""
+
+    action_type: str
+    title: str
+    description: str
+    risk_level: str
+    default_blocked: bool
+    enabled: bool
+    target_scope: str
+    param_schema: dict[str, Any]  # JSON Schema (panel ipucu için)
+    risk_explanation: str
+    rollback_note: str
+    blocked_detail: str
+
+
+class RemediationCatalogResponse(BaseModel):
+    items: list[RemediationCatalogItem]
+    policy_mode: str
+    remediation_enabled: bool
+    allow_blocked_actions: bool
+    approval_ttl_minutes: int
+    rate_limit_per_hour: int
+
+
+class RemediationCatalogUpdateRequest(BaseModel):
+    """Operatör enable anahtarı (admin; audit'li; default_blocked ek kapı ister)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class RemediationCatalogUpdateResponse(BaseModel):
+    action_type: str
+    enabled: bool
+    result: str  # "updated" | "unchanged"
+
+
+class RemediationCreateRequest(BaseModel):
+    """Yeni müdahale önerisi (analyst+; kanıt kimliklerle, kanıt verisiyle değil)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action_type: str = Field(min_length=1, max_length=32)
+    params: dict[str, Any] = Field(default_factory=dict)
+    event_ids: list[str] = Field(min_length=1, max_length=20)
+    correlation_id: str | None = Field(default=None, max_length=64)
+    justification: str = Field(min_length=10, max_length=500)
+    idempotency_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+
+    @field_validator("event_ids")
+    @classmethod
+    def _unique_event_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("Aynı olay kimliği birden fazla verilemez.")
+        return value
+
+
+class RemediationPolicyCheck(BaseModel):
+    name: str
+    passed: bool
+    detail: str = ""
+
+
+class RemediationActionItem(BaseModel):
+    """Öneri liste satırı (özet; kanıt paketi detayda)."""
+
+    id: str
+    action_type: str
+    action_title: str
+    risk_level: str
+    status: str
+    requested_by_username: str
+    approved_by_username: str | None = None
+    justification: str
+    created_at: datetime
+    approved_at: datetime | None = None
+    executed_at: datetime | None = None
+
+
+class RemediationActionListResponse(BaseModel):
+    items: list[RemediationActionItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    pages: int = Field(ge=0)
+
+
+class RemediationActionDetail(RemediationActionItem):
+    """Öneri detayı: kanıt paketi + politika izi + yürütme sonucu."""
+
+    params: dict[str, Any]
+    evidence: dict[str, Any]
+    policy_decision: dict[str, Any]
+    rejected_by_username: str | None = None
+    rejected_reason: str | None = None
+    rejected_at: datetime | None = None
+    execution_count: int = 0
+    execution_result: dict[str, Any] | None = None
+    execution_error: str | None = None
+    updated_at: datetime
+
+
+class RemediationCreateResponse(BaseModel):
+    """201 created=true (yeni satır) | 200 created=false (idempotency tekrarı)."""
+
+    created: bool
+    action: RemediationActionDetail
+
+
+class RemediationDecisionRequest(BaseModel):
+    """Onay/ret gövdesi (ret için reason zorunlu; onayda opsiyonel not)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class RemediationExecuteRequest(BaseModel):
+    """Yürütme gövdesi: execution_key replay koruması sağlar (zorunlu)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    execution_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+
+
+class RemediationActionResponse(BaseModel):
+    """Onay/ret/yürütme yanıtı (replay etiketli)."""
+
+    action: RemediationActionDetail
+    replayed: bool = False

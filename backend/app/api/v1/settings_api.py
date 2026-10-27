@@ -18,6 +18,7 @@ from app.api.v1.schemas import (
     ModelInfo,
     NotificationSettings,
     RedactionSettings,
+    RemediationSettings,
     SettingsResponse,
     WorkerSettings,
 )
@@ -64,6 +65,15 @@ async def get_settings_view(
             interval_seconds=settings.worker_interval_seconds,
             concurrency=settings.worker_concurrency,
             batch_size=settings.analysis_batch_size,
+        ),
+        remediation=RemediationSettings(
+            enabled=settings.remediation_enabled,
+            policy_mode=settings.policy_mode,
+            approval_ttl_minutes=settings.remediation_approval_ttl_minutes,
+            rate_limit_per_hour=settings.remediation_rate_limit_per_hour,
+            allow_blocked_actions=settings.remediation_allow_blocked_actions,
+            allow_self_approval=settings.remediation_allow_self_approval,
+            executor_timeout_seconds=settings.remediation_executor_timeout_seconds,
         ),
         notifications=NotificationSettings(),
     )

@@ -37,6 +37,17 @@ class AuditAction:
     # Faz 06: korelasyon kuralı sürüm senkronu ve operatör toggle izleri
     CORRELATION_RULE_SYNCED = "correlation.rule.synced"
     CORRELATION_RULE_UPDATED = "correlation.rule.updated"
+    # Faz 07: müdahale hazırlık akışı (phases/07: "her aksiyonun sonucu ve
+    # hata durumu audit log'a yazılsın") — redler dahil tüm geçişler izlenir.
+    REMEDIATION_ACTION_PROPOSED = "remediation.action.proposed"
+    REMEDIATION_ACTION_APPROVED = "remediation.action.approved"
+    REMEDIATION_ACTION_REJECTED = "remediation.action.rejected"
+    REMEDIATION_ACTION_EXECUTED = "remediation.action.executed"
+    REMEDIATION_ACTION_FAILED = "remediation.action.failed"
+    REMEDIATION_ACTION_BLOCKED = "remediation.action.blocked"
+    REMEDIATION_ACTION_REPLAYED = "remediation.action.replayed"
+    REMEDIATION_ACTION_RATE_LIMITED = "remediation.action.rate_limited"
+    REMEDIATION_CATALOG_UPDATED = "remediation.catalog.updated"
 
 
 # Kod içi yazma izni: yalnızca bu sabitler audit_log.action'a yazılabilir.
@@ -50,6 +61,15 @@ ALLOWED_ACTIONS = frozenset(
         AuditAction.BOOTSTRAP_ADMIN_CREATED,
         AuditAction.CORRELATION_RULE_SYNCED,
         AuditAction.CORRELATION_RULE_UPDATED,
+        AuditAction.REMEDIATION_ACTION_PROPOSED,
+        AuditAction.REMEDIATION_ACTION_APPROVED,
+        AuditAction.REMEDIATION_ACTION_REJECTED,
+        AuditAction.REMEDIATION_ACTION_EXECUTED,
+        AuditAction.REMEDIATION_ACTION_FAILED,
+        AuditAction.REMEDIATION_ACTION_BLOCKED,
+        AuditAction.REMEDIATION_ACTION_REPLAYED,
+        AuditAction.REMEDIATION_ACTION_RATE_LIMITED,
+        AuditAction.REMEDIATION_CATALOG_UPDATED,
     }
 )
 

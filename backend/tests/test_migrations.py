@@ -322,3 +322,77 @@ class TestMigrations:
         assert again.returncode == 0, again.stderr
         tables = await _table_names(migration_db)
         assert {"correlation_rules", "correlations", "correlation_events"} <= set(tables)
+
+
+class TestRemediationMigrations:
+    """Faz 07: remediation_catalog + remediation_actions migration testleri."""
+
+    async def test_upgrade_head_creates_remediation_tables(
+        self, migration_db: str
+    ) -> None:
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        tables = await _table_names(migration_db)
+        assert "remediation_catalog" in tables
+        assert "remediation_actions" in tables
+
+    async def test_remediation_actions_schema_required_columns(
+        self, migration_db: str
+    ) -> None:
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        columns = await _table_columns(migration_db, "remediation_actions")
+        for required in (
+            "id",
+            "idempotency_key",
+            "action_type",
+            "action_title",
+            "risk_level",
+            "status",
+            "requested_by_user_id",
+            "requested_by_username",
+            "justification",
+            "params",
+            "evidence",
+            "policy_decision",
+            "approved_by_user_id",
+            "approved_by_username",
+            "approved_at",
+            "rejected_by_username",
+            "rejected_reason",
+            "execution_key",
+            "executed_at",
+            "execution_count",
+            "execution_result",
+            "execution_error",
+            "created_at",
+            "updated_at",
+        ):
+            assert required in columns, f"remediation_actions sütunu eksik: {required}"
+        ddl = await _table_sql(migration_db, "remediation_actions")
+        assert "UNIQUE" in ddl.upper()  # idempotency_key + execution_key
+        assert "ck_remediation_actions_status" in ddl
+        assert "ck_remediation_actions_action_type" in ddl
+        assert "ck_remediation_actions_risk_level" in ddl
+        assert "FOREIGN KEY" in ddl.upper()  # users FK (SET NULL)
+
+    async def test_remediation_downgrade_drops_both_tables(
+        self, migration_db: str
+    ) -> None:
+        """Geri dönüş yolu: head → 0004 iki remediation tablosu düşer."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        down = _run_alembic(migration_db, "downgrade", "0004_correlations")
+        assert down.returncode == 0, down.stderr
+        tables = await _table_names(migration_db)
+        assert "remediation_actions" not in tables
+        assert "remediation_catalog" not in tables
+        # Önceki faz tabloları etkilenmez:
+        assert "correlations" in tables
+        assert "users" in tables
+
+    async def test_remediation_roundtrip_reupgrade(self, migration_db: str) -> None:
+        """0005 → 0004 → 0005 turu şemayı bozmaz."""
+        assert _run_alembic(migration_db, "upgrade", "head").returncode == 0
+        assert _run_alembic(migration_db, "downgrade", "0004_correlations").returncode == 0
+        again = _run_alembic(migration_db, "upgrade", "head")
+        assert again.returncode == 0, again.stderr
+        tables = await _table_names(migration_db)
+        assert {"remediation_catalog", "remediation_actions"} <= set(tables)

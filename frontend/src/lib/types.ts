@@ -148,6 +148,15 @@ export interface SettingsResponse {
     concurrency: number;
     batch_size: number;
   };
+  remediation: {
+    enabled: boolean;
+    policy_mode: string;
+    approval_ttl_minutes: number;
+    rate_limit_per_hour: number;
+    allow_blocked_actions: boolean;
+    allow_self_approval: boolean;
+    executor_timeout_seconds: number;
+  };
   notifications: { enabled: boolean; roadmap_note: string };
 }
 
@@ -237,4 +246,114 @@ export interface CorrelationRuleUpdateResponse {
   key: string;
   enabled: boolean;
   result: "updated" | "unchanged";
+}
+
+// --- Remediation (Faz 07) -----------------------------------------------------
+//
+// "Model eylemi doğrudan başlatamaz" (phases/07): öneri yalnızca kimlikli
+// insan tarafından yapılır; yürütme daima SİMÜLASYON (simulated=true).
+
+export interface RemediationCatalogItem {
+  action_type: string;
+  title: string;
+  description: string;
+  risk_level: "low" | "medium" | "high";
+  default_blocked: boolean;
+  enabled: boolean;
+  target_scope: string;
+  param_schema: Record<string, unknown>;
+  risk_explanation: string;
+  rollback_note: string;
+  blocked_detail: string;
+}
+
+export interface RemediationCatalogResponse {
+  items: RemediationCatalogItem[];
+  policy_mode: string;
+  remediation_enabled: boolean;
+  allow_blocked_actions: boolean;
+  approval_ttl_minutes: number;
+  rate_limit_per_hour: number;
+}
+
+export interface RemediationCatalogUpdateResponse {
+  action_type: string;
+  enabled: boolean;
+  result: "updated" | "unchanged";
+}
+
+export interface RemediationPolicyCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface RemediationActionItem {
+  id: string;
+  action_type: string;
+  action_title: string;
+  risk_level: "low" | "medium" | "high";
+  status: "proposed" | "approved" | "rejected" | "expired" | "executed" | "failed";
+  requested_by_username: string;
+  approved_by_username: string | null;
+  justification: string;
+  created_at: string;
+  approved_at: string | null;
+  executed_at: string | null;
+}
+
+export interface RemediationActionDetail extends RemediationActionItem {
+  params: Record<string, unknown>;
+  evidence: RemediationEvidence;
+  policy_decision: { allowed?: boolean; checks?: RemediationPolicyCheck[] };
+  rejected_by_username: string | null;
+  rejected_reason: string | null;
+  rejected_at: string | null;
+  execution_count: number;
+  execution_result: {
+    success?: boolean;
+    simulated?: boolean;
+    duration_ms?: number;
+    output?: Record<string, unknown>;
+  } | null;
+  execution_error: string | null;
+  updated_at: string;
+}
+
+/** Kanıt paketi (sunucu üretimi; alanlar build_evidence sözleşmesiyle aynı). */
+export interface RemediationEvidence {
+  event_ids?: string[];
+  alert_ids?: string[];
+  rule_ids?: string[];
+  agent_ids?: string[];
+  agent_names?: string[];
+  src_ips?: string[];
+  max_rule_level?: number;
+  window_start?: string;
+  window_end?: string;
+  correlation_id?: string | null;
+  risk_level?: string;
+  risk_explanation?: string;
+  rollback_note?: string;
+  policy_mode?: string;
+  built_at?: string;
+  [key: string]: unknown;
+}
+
+export interface RemediationActionListResponse {
+  items: RemediationActionDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface RemediationCreateResponse {
+  created: boolean;
+  action: RemediationActionDetail;
+}
+
+export interface RemediationActionResponse {
+  action: RemediationActionDetail;
+  replayed: boolean;
 }

@@ -136,7 +136,30 @@ class Settings(BaseSettings):
     correlation_max_events_per_run: int = Field(default=5_000, ge=100, le=100_000)
 
     # --- Politika (Faz 07) ---
+    # Mod enum'u YALNIZCA observe_only/dry_run içerir: "gerçek yürütme"
+    # (active/exec) modu KODDA YOKTUR — eklenmesi ayrı, açık bir güvenlik
+    # incelemesi gerektirir (phases/07: "gerçek otomatik müdahaleyi
+    # varsayılan olarak açma").
     policy_mode: Literal["observe_only", "dry_run"] = "observe_only"
+
+    # --- Müdahale hazırlığı (Faz 07) ---
+    # Kill switch: false iken öneri + yürütme tamamen kapalı (503); katalog
+    # okuması devam eder. Acil durdurma: docs/remediation-runbook.md §1.
+    remediation_enabled: bool = True
+    # Onay penceresi: onaydan sonra yürütme en fazla bu kadar süre yapabilir;
+    # aşılırsa onay expired sayılır (yeniden öneri gerekir).
+    remediation_approval_ttl_minutes: int = Field(default=60, ge=1, le=10_080)
+    # Kullanıcı başına saatlik öneri+yürütme tavanı (istismar freni).
+    remediation_rate_limit_per_hour: int = Field(default=20, ge=1, le=1_000)
+    # Yürütücü çağrısı zaman sınırı (saniye) — aşılırsa failed+executor_timeout.
+    remediation_executor_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    # İki bağımsız kapı (1/2): firewall/SSH/hesap aksiyonlarının global
+    # kapısı. Prod'da AÇILAMAZ (aşağıdaki validator reddeder). Kapı 2:
+    # admin PATCH ile aksiyon bazlı enable (audit'li).
+    remediation_allow_blocked_actions: bool = False
+    # Görev ayrımı istisnası: false → öneren kendi önerisini onaylayamaz
+    # (varsayılan). true yalnızca tek-admin küçük kurulumlar içindir (runbook).
+    remediation_allow_self_approval: bool = False
 
     @field_validator("database_url")
     @classmethod
@@ -176,6 +199,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "APP_ENV=prod iken WAZUH_SOURCE_MODE=mock kullanılamaz: üretimde "
                 "alert kaynağı gerçek Wazuh Indexer olmalıdır."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_remediation_prod(self) -> Settings:
+        """Üretimde kritik-erişim aksiyonlarının kapısı açılamaz (phases/07)."""
+        if self.app_env == "prod" and self.remediation_allow_blocked_actions:
+            raise ValueError(
+                "APP_ENV=prod iken REMEDIATION_ALLOW_BLOCKED_ACTIONS=true "
+                "kullanılamaz: firewall/SSH/hesap aksiyonları üretimde iki "
+                "bağımsız kapıyla da açılamaz (docs/remediation-runbook.md)."
             )
         return self
 

@@ -106,6 +106,46 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Müdahale hazırlığı (Faz 07)</CardTitle>
+              <Badge tone={settings.data.remediation.enabled ? "info" : "neutral"}>
+                {settings.data.remediation.enabled ? settings.data.remediation.policy_mode : "kill switch"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="divide-y divide-slate-800/40">
+              <Row
+                label="Alt sistem"
+                value={settings.data.remediation.enabled ? "açık" : "kapalı (kill switch)"}
+              />
+              <Row label="Politika modu" value={settings.data.remediation.policy_mode} />
+              <Row
+                label="Onay penceresi"
+                value={`${settings.data.remediation.approval_ttl_minutes} dk`}
+              />
+              <Row
+                label="Hız tavanı"
+                value={`${settings.data.remediation.rate_limit_per_hour}/saat (kullanıcı)`}
+              />
+              <Row
+                label="Kritik aksiyon kapısı"
+                value={
+                  settings.data.remediation.allow_blocked_actions
+                    ? "AÇIK (global) — prod'da yasak"
+                    : "kapalı (firewall/SSH/hesap engelli)"
+                }
+              />
+              <Row
+                label="Kendi önerisini onaylama"
+                value={settings.data.remediation.allow_self_approval ? "izinli (istisna)" : "yasak (görev ayrımı)"}
+              />
+              <Row
+                label="Yürütücü zaman aşımı"
+                value={`${settings.data.remediation.executor_timeout_seconds} sn`}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Bildirimler</CardTitle>
               <Badge tone="neutral">Faz 08 — yol haritası</Badge>
             </CardHeader>

@@ -305,3 +305,72 @@ def auth_settings_overrides(**extra: object) -> dict[str, object]:
     values.update(extra)
     return values
 
+
+# --- Faz 07: müdahale test yardımcıları -------------------------------------
+
+
+async def login_headers_for(
+    client: Any,
+    *,
+    username: str,
+    password: str,
+) -> dict[str, str]:
+    """DB'de var olan herhangi bir kullanıcı için Bearer başlığı üretir."""
+    response = await client.post(
+        "/api/v1/auth/login", json={"username": username, "password": password}
+    )
+    assert response.status_code == 200, (
+        f"giriş beklenmedik: {response.status_code} {response.text}"
+    )
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+class FakeRemediationExecutor:
+    """Test sahte yürütücü: çağrıları kaydeder; SİSTEMDE DEĞİŞİKLİK YAPMAZ.
+
+    - calls: her execute çağrısının kaydı (observe-only kanıtı: len(calls)==0)
+    - latency_seconds: executor_timeout testi için yapay gecikme
+    - fail: executor_failure yolunu test etmek için başarısız sonuç
+    """
+
+    def __init__(
+        self,
+        *,
+        latency_seconds: float = 0.0,
+        fail: bool = False,
+    ) -> None:
+        from app.services.remediation.executor import ExecutionResult
+
+        self._result_type = ExecutionResult
+        self.calls: list[dict[str, Any]] = []
+        self.latency_seconds = latency_seconds
+        self.fail = fail
+
+    async def execute(
+        self,
+        action_type: str,
+        params: dict[str, Any],
+        evidence: dict[str, Any],
+    ) -> Any:
+        import asyncio
+
+        self.calls.append(
+            {"action_type": action_type, "params": dict(params)}
+        )
+        if self.latency_seconds > 0:
+            await asyncio.sleep(self.latency_seconds)
+        if self.fail:
+            return self._result_type(
+                success=False,
+                simulated=True,
+                error_code="fake_denied",
+                error_message="Fake yürütücü reddetti (test).",
+                duration_ms=1,
+            )
+        return self._result_type(
+            success=True,
+            simulated=True,
+            duration_ms=1,
+            output={"plan": "fake-test-plan", "params": dict(params)},
+        )
+

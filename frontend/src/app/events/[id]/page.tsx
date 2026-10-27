@@ -11,7 +11,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import { assessmentBadge, formatDateTime, levelTone } from "@/components/event-bits";
 import { ErrorState, ForbiddenState, LoadingState } from "@/components/states";
@@ -33,6 +33,7 @@ function EvidenceRow({ label, value }: { label: string; value: string | null | u
 
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const detail = useQuery({
     queryKey: ["event", params.id],
     queryFn: () => api.get<EventDetail>(`/api/v1/events/${params.id}`),
@@ -237,19 +238,21 @@ export default function EventDetailPage() {
         </section>
       </div>
 
-      {/* --- Müdahale: Faz 07'ye kadar devre dışı --- */}
+      {/* --- Müdahale: Faz 07 — yalnızca öneri hazırlığı (dry-run) --- */}
       <Card className="mt-4">
         <CardHeader>
           <CardTitle>Müdahale</CardTitle>
-          <Badge tone="neutral">Faz 07 — yolda (dry-run)</Badge>
+          <Badge tone="neutral">dry-run — simülasyon</Badge>
         </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Button variant="danger" disabled title="Faz 07'ye kadar müdahale yoktur">
-            Müdahale başlat
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" onClick={() => void router.push("/remediation")}>
+            Müdahale önerisi oluştur
           </Button>
           <p className="text-xs text-slate-500">
-            Bu panel yalnızca gözlem modundadır; politika motoru (allowlist +
-            insan onayı + rollback) Faz 07'de devreye girecektir.
+            Öneri politika motorundan (allowlist + hedef kapsamı + tipli
+            parametreler) ve admin onayından geçer; yürütme yalnızca
+            SİMÜLASYONdur — model eylem başlatamaz, sistem değişikliği yapan
+            kod yolu yoktur.
           </p>
         </CardContent>
       </Card>

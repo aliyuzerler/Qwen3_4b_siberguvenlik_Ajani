@@ -20,6 +20,7 @@ const NAV_ITEMS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/events", label: "Olaylar" },
   { href: "/correlations", label: "Korelasyon" },
   { href: "/rules", label: "Kurallar" },
+  { href: "/remediation", label: "Müdahale" },
   { href: "/agents", label: "Sunucular" },
   { href: "/audit", label: "Audit Log", adminOnly: true },
   { href: "/settings", label: "Ayarlar", adminOnly: true },
@@ -63,6 +64,12 @@ export function PanelShell({ children }: { children: ReactNode }) {
             <span className="ml-1 rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400">
               observe_only
             </span>
+            <span
+              className="ml-1 rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500"
+              title="Model eylem başlatamaz; yürütme yalnızca simülasyondur"
+            >
+              müdahale: dry-run
+            </span>
           </Link>
           <nav aria-label="Ana menü" className="flex flex-1 items-center gap-1">
             {NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => (
@@ -96,8 +103,8 @@ export function PanelShell({ children }: { children: ReactNode }) {
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
       <footer className="mx-auto max-w-7xl px-4 pb-8 pt-2 text-[11px] text-slate-600">
-        ajant — yalnızca gözlem modu (Faz 07'ye kadar hiçbir müdahale yolu yoktur) ·
-        Model: Qwen3 4B (Ollama, yerel)
+        ajant — yalnızca gözlem modu · müdahale yalnızca dry-run simülasyonu
+        (gerçek sistem değişikliği kod yolu YOKTUR) · Model: Qwen3 4B (Ollama, yerel)
       </footer>
     </div>
   );
